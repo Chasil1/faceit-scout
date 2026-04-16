@@ -1,0 +1,6 @@
+aiohttp>=3.9
+rich>=13.0
+fastapi>=0.110
+uvicorn>=0.29
+pystray>=0.19
+pillow>=10.0

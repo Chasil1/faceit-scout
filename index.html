@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Faceit Scout · Dota 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #111111;
+  --bg2:     #181818;
+  --bg3:     #202020;
+  --border:  #2a2a2a;
+  --border2: #333333;
+  --orange:  #FF5500;
+  --text:    #f0f0f0;
+  --dim:     #888888;
+  --muted:   #444444;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 500;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── VIEWS ──────────────────────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; }
+#input-view.active { display: flex; }
+
+/* ─── INPUT ──────────────────────────────────────────────────────────── */
+#input-view {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  gap: 0;
+}
+
+.logo-wrap { text-align: center; margin-bottom: 2.75rem; }
+
+.logo {
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: .25em;
+  color: var(--orange);
+  line-height: 1;
+}
+
+.logo-divider {
+  width: 36px;
+  height: 2px;
+  background: var(--orange);
+  margin: .6rem auto .5rem;
+}
+
+.logo-sub {
+  font-size: .78rem;
+  color: var(--dim);
+  letter-spacing: .35em;
+  text-transform: uppercase;
+}
+
+.search-wrap {
+  display: flex;
+  width: 100%;
+  max-width: 540px;
+}
+
+#room-input {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-right: none;
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: .8rem 1.1rem;
+  outline: none;
+  transition: border-color .2s;
+}
+#room-input:focus { border-color: var(--orange); }
+#room-input::placeholder { color: var(--muted); }
+
+#search-btn {
+  background: var(--orange);
+  border: none;
+  color: #fff;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .85rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  padding: .8rem 1.6rem;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+#search-btn:hover { background: #ff6c22; }
+#search-btn:active { background: #e04800; }
+#search-btn:disabled { background: #663300; cursor: default; }
+
+.input-hint {
+  margin-top: .85rem;
+  font-size: .78rem;
+  color: var(--muted);
+  letter-spacing: .03em;
+}
+
+.credits {
+  position: fixed;
+  bottom: 1rem;
+  right: 1.25rem;
+  font-size: .7rem;
+  color: #333;
+  letter-spacing: .04em;
+}
+.credits a {
+  color: #444;
+  text-decoration: none;
+  transition: color .2s;
+}
+.credits a:hover { color: var(--dim); }
+
+.error-banner {
+  display: none;
+  margin-top: 1rem;
+  padding: .6rem 1rem;
+  background: rgba(204,44,44,.15);
+  border: 1px solid rgba(204,44,44,.4);
+  color: #e06060;
+  font-size: .88rem;
+  max-width: 540px;
+  width: 100%;
+  text-align: center;
+}
+.error-banner.visible { display: block; }
+
+/* ─── LOADING ─────────────────────────────────────────────────────────── */
+#loading-view {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.sk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+.sk-head {
+  height: 13px;
+  width: 90px;
+  border-radius: 2px;
+  margin-bottom: 1rem;
+}
+
+.sk-card {
+  height: 70px;
+  border-radius: 2px;
+  margin-bottom: .45rem;
+}
+
+.sk {
+  background: linear-gradient(90deg, var(--bg2) 25%, #242424 50%, var(--bg2) 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ─── MATCH ───────────────────────────────────────────────────────────── */
+#match-view {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+/* top bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.back-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  padding: .45rem 1rem;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.back-btn:hover { border-color: var(--orange); color: var(--orange); }
+
+.match-meta-top {
+  font-size: .78rem;
+  color: var(--dim);
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+/* match header */
+.match-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem 0 1.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.75rem;
+}
+
+.team-side { display: flex; align-items: center; gap: .75rem; }
+.team-side.right { flex-direction: row-reverse; text-align: right; }
+
+.team-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg3);
+  flex-shrink: 0;
+}
+
+.team-name {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.vs-block { text-align: center; }
+
+.vs-label {
+  font-size: .72rem;
+  color: var(--dim);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: .3rem;
+}
+
+.match-status-badge {
+  display: inline-block;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: .25rem .7rem;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+}
+.match-status-badge.live {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* columns */
+.teams-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+.teams-grid.draft-mode {
+  grid-template-columns: 1fr 1.3fr 1fr;
+}
+
+.col-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-bottom: .6rem;
+  margin-bottom: .6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* pool column during draft */
+.pool-col > .col-label {
+  text-align: center;
+  color: var(--orange);
+  border-bottom-color: rgba(255,85,0,.35);
+}
+.pool-col .player-card {
+  border-left-color: transparent;
+}
+.pool-col .player-card:hover {
+  border-left-color: var(--orange);
+}
+
+/* captain crown */
+.captain-badge {
+  font-size: .65rem;
+  color: #ffc802;
+  letter-spacing: .04em;
+  margin-left: .3rem;
+  vertical-align: middle;
+}
+
+/* ─── PLAYER CARD ─────────────────────────────────────────────────────── */
+.player-card {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  padding: .65rem .9rem;
+  margin-bottom: .4rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .18s, background .18s;
+  animation: fadeUp .35s ease both;
+}
+.player-card:hover {
+  background: var(--bg3);
+  border-left-color: var(--orange);
+  border-color: var(--border2);
+  border-left-color: var(--orange);
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.p-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--bg3);
+  flex-shrink: 0;
+}
+
+.p-info { flex: 1; min-width: 0; }
+
+.p-name {
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  letter-spacing: .02em;
+}
+
+.p-badges {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .3rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: .68rem;
+  font-weight: 700;
+  padding: .13rem .42rem;
+  border-radius: 1px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* Dota rank badge colors */
+.r0  { background: rgba(90,90,90,.18);  color: #666; }
+.r1  { background: rgba(150,150,150,.2); color: #aaa; }
+.r2  { background: rgba(60,175,100,.2);  color: #3db870; }
+.r3  { background: rgba(70,200,200,.2);  color: #46c8c8; }
+.r4  { background: rgba(55,140,220,.2);  color: #378cdc; }
+.r5  { background: rgba(160,80,220,.2);  color: #a050dc; }
+.r6  { background: rgba(210,60,60,.2);   color: #d23c3c; }
+.r7  { background: rgba(240,195,50,.2);  color: #f0c332; }
+.r8  { background: rgba(255,85,0,.25);   color: #ff5500; }
+
+/* Position badge colors */
+.p1  { background: rgba(55,140,220,.2);  color: #378cdc; }
+.p2  { background: rgba(160,80,220,.2);  color: #a050dc; }
+.p3  { background: rgba(230,110,40,.2);  color: #e66e28; }
+.p4  { background: rgba(40,195,185,.2);  color: #28c3b9; }
+.p5  { background: rgba(50,185,90,.2);   color: #32b95a; }
+.pest { background: rgba(80,80,80,.2);   color: #666; }
+.badge.secondary { opacity: .55; }
+
+/* right side */
+.p-right {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-shrink: 0;
+}
+
+.p-elo {
+  text-align: right;
+  min-width: 46px;
+}
+
+.elo-num {
+  font-size: .95rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.1;
+}
+
+.elo-lbl {
+  font-size: .62rem;
+  color: var(--dim);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* rank image */
+.rank-img-wrap {
+  position: relative;
+  width: 38px;
+  height: 42px;
+  flex-shrink: 0;
+}
+.rank-img {
+  width: 38px;
+  height: 42px;
+  object-fit: contain;
+  display: block;
+}
+.rank-img-wrap .rank-img {
+  width: 100%;
+  height: 100%;
+}
+.rank-lb-overlay {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: .52rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 4px #000, 0 0 2px #000;
+  white-space: nowrap;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Faceit level badge — circle */
+.lvl-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .88rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.lv0             { border-color: #444; color: #444; }
+.lv1,.lv2,.lv3   { border-color: #b0b0b0; color: #b0b0b0; }
+.lv4,.lv5,.lv6   { border-color: #ffc802; color: #ffc802; }
+.lv7,.lv8        { border-color: #ff7300; color: #ff7300; }
+.lv9,.lv10       { border-color: #fe3140; color: #fe3140; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
+
+/* ─── RESPONSIVE ──────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .teams-grid, .sk-grid { grid-template-columns: 1fr; }
+  .match-header { grid-template-columns: 1fr; gap: .75rem; }
+  .team-side.right { flex-direction: row; text-align: left; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ INPUT VIEW ══════════════════════════════════════════════════════ -->
+<div id="input-view" class="view active">
+  <div class="logo-wrap">
+    <div class="logo">FACEIT SCOUT</div>
+    <div class="logo-divider"></div>
+    <div class="logo-sub">Dota 2 · Draft Analyzer</div>
+  </div>
+  <div class="search-wrap">
+    <input type="text" id="room-input"
+           placeholder="Match Room ID або повний URL кімнати"
+           autocomplete="off" spellcheck="false">
+    <button id="search-btn">АНАЛІЗ</button>
+  </div>
+  <div class="error-banner" id="error-banner"></div>
+  <p class="input-hint">напр: 1-20ca85e4-1574-4705-b8b4-d1dce9938484</p>
+</div>
+
+<!-- ═══ LOADING VIEW ════════════════════════════════════════════════════ -->
+<div id="loading-view" class="view">
+  <div class="sk-grid" id="skeleton-grid"></div>
+</div>
+
+<!-- ═══ MATCH VIEW ══════════════════════════════════════════════════════ -->
+<div id="match-view" class="view">
+  <div class="top-bar">
+    <button class="back-btn" id="back-btn">← НАЗАД</button>
+    <div class="match-meta-top" id="match-meta"></div>
+  </div>
+
+  <div class="match-header">
+    <div class="team-side" id="team1-side"></div>
+    <div class="vs-block">
+      <span class="vs-label">vs</span>
+      <div class="match-status-badge" id="match-status"></div>
+    </div>
+    <div class="team-side right" id="team2-side"></div>
+  </div>
+
+  <div class="teams-grid" id="teams-grid">
+    <div>
+      <div class="col-label" id="col1-label">Гравці</div>
+      <div id="team1-players"></div>
+    </div>
+    <div class="pool-col" id="pool-col" style="display:none">
+      <div class="col-label">⚔ ПІКАЮТЬСЯ</div>
+      <div id="pool-players"></div>
+    </div>
+    <div>
+      <div class="col-label" id="col2-label">Гравці</div>
+      <div id="team2-players"></div>
+    </div>
+  </div>
+</div>
+
+<div class="credits">Created by <a href="https://steamcommunity.com/id/Chasil/" target="_blank" rel="noopener">Chasil</a></div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────────────
+const STATUS_MAP = {
+  FINISHED: 'Завершено', ONGOING: 'Триває', READY: 'Готово',
+  VOTING: 'Голосування', CONFIGURING: 'Налаштування',
+  CAPTAIN_PICK: 'Драфт гравців', CAPTAIN_PICK_VOTE: 'Драфт гравців',
+  CANCELLED: 'Скасовано', ABORTED: 'Перервано',
+};
+
+const LIVE_STATUSES = new Set(['CAPTAIN_PICK', 'CAPTAIN_PICK_VOTE', 'ONGOING', 'READY', 'CONFIGURING']);
+const DRAFT_STATUSES = new Set(['CAPTAIN_PICK', 'CAPTAIN_PICK_VOTE']);
+
+// ── State ──────────────────────────────────────────────────────────────
+let currentRoomId = null;
+let pollTimer = null;
+// Cache: player_id → full player data (including opendota stats)
+let playerCache = {};
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function posNum(pos) {
+  if (!pos) return 0;
+  const m = pos.match(/Pos (\d)/);
+  return m ? +m[1] : 0;
+}
+
+function posClass(pos) {
+  const n = posNum(pos);
+  return n ? `p${n}` : 'pest';
+}
+
+function posLabel(pos) {
+  if (!pos) return null;
+  return pos.replace('~', ' ~');
+}
+
+function lvlClass(lvl) {
+  return `lv${Math.min(+lvl || 0, 10)}`;
+}
+
+// ── Rank image icon ────────────────────────────────────────────────────
+function rankImgSrc(major, rankStr) {
+  if (!major) return '/photo/SeasonalRank0-0.webp';
+  if (major < 8) {
+    const star = (rankStr?.match(/\s(\d)$/) || [])[1] || '1';
+    return `/photo/SeasonalRank${major}-${star}.webp`;
+  }
+  // Immortal: leaderboard <= 1000 → Top2, else → Top0
+  const lb = (rankStr?.match(/#(\d+)/) || [])[1];
+  return (lb && parseInt(lb) <= 1000)
+    ? '/photo/SeasonalRankTop2.webp'
+    : '/photo/SeasonalRankTop0.webp';
+}
+
+function rankIcon(major, rankStr) {
+  const src = rankImgSrc(major, rankStr);
+  const title = esc(rankStr || 'Unranked');
+  const lb = (major === 8) ? (rankStr?.match(/#(\d+)/) || [])[1] : null;
+
+  if (lb) {
+    return `<div class="rank-img-wrap" title="${title}">
+      <img class="rank-img" src="${src}" alt="${title}">
+      <div class="rank-lb-overlay">${lb}</div>
+    </div>`;
+  }
+  return `<img class="rank-img" src="${src}" alt="${title}" title="${title}">`;
+}
+
+// ── Rank sort value (higher = better rank) ─────────────────────────────
+function rankSortVal(p) {
+  const major = p.dota_rank_major || 0;
+  const rank  = p.dota_rank || '';
+  if (major === 8) {
+    const lb = rank.match(/#(\d+)/);
+    return lb ? 100000 - parseInt(lb[1]) : 90000;  // Immortal #1 → 99999
+  }
+  const star = (rank.match(/\s(\d)$/) || [])[1];
+  return major * 100 + (star ? parseInt(star) : 0);
+}
+
+function sortByRank(players) {
+  return [...players].sort((a, b) => rankSortVal(b) - rankSortVal(a));
+}
+
+function extractId(raw) {
+  const s = raw.trim();
+  const m = s.match(/\/room\/([^/?#\s]+)/);
+  return m ? m[1] : s;
+}
+
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Skeleton ───────────────────────────────────────────────────────────
+function buildSkeleton() {
+  const col = (n) => `
+    <div>
+      <div class="sk sk-head"></div>
+      ${Array(n).fill('<div class="sk sk-card"></div>').join('')}
+    </div>`;
+  document.getElementById('skeleton-grid').innerHTML = col(5) + col(5);
+}
+
+// ── Render ─────────────────────────────────────────────────────────────
+function renderTeamSide(el, data) {
+  const img = data.avatar
+    ? `<img class="team-avatar" src="${esc(data.avatar)}" alt="" onerror="this.style.display='none'">`
+    : '';
+  el.innerHTML = `${img}<div class="team-name">${esc(data.name)}</div>`;
+}
+
+function renderPlayer(p, delay, isCaptain = false) {
+  const avatar = p.avatar
+    ? `<img class="p-avatar" src="${esc(p.avatar)}" alt=""
+          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 42 42%22><rect width=%2242%22 height=%2242%22 fill=%22%23202020%22/><text x=%2221%22 y=%2227%22 text-anchor=%22middle%22 font-size=%2218%22 fill=%22%23444%22>?</text></svg>'">`
+    : `<div class="p-avatar"></div>`;
+
+  const rk    = p.dota_rank || 'Unranked';
+  const pos   = posLabel(p.position);
+  const elo   = p.faceit_elo ? `<div class="elo-num">${esc(p.faceit_elo)}</div><div class="elo-lbl">ELO</div>` : '';
+  const lvl   = p.faceit_level || 0;
+  const link  = p.opendota_link || '#';
+  const crown = isCaptain ? `<span class="captain-badge">♛ КАП</span>` : '';
+
+  return `
+    <a class="player-card" href="${esc(link)}" target="_blank" rel="noopener"
+       style="animation-delay:${delay}ms">
+      ${avatar}
+      <div class="p-info">
+        <div class="p-name">${esc(p.nickname)}${crown}</div>
+        <div class="p-badges">
+          ${pos  ? `<span class="badge ${posClass(p.position)}">${esc(pos)}</span>` : ''}
+          ${p.position2 ? `<span class="badge ${posClass(p.position2)} secondary">${esc(posLabel(p.position2))}</span>` : ''}
+        </div>
+      </div>
+      <div class="p-right">
+        <div class="p-elo">${elo}</div>
+        ${rankIcon(p.dota_rank_major, p.dota_rank)}
+        <div class="lvl-badge ${lvlClass(lvl)}">${lvl || '?'}</div>
+      </div>
+    </a>`;
+}
+
+function renderMatch(data) {
+  // meta
+  const meta = [data.competition, data.region].filter(Boolean).join(' · ');
+  document.getElementById('match-meta').textContent = meta;
+
+  // status badge
+  const statusEl = document.getElementById('match-status');
+  const statusTxt = STATUS_MAP[data.status] || data.status || '—';
+  statusEl.textContent = statusTxt;
+  statusEl.className = 'match-status-badge' +
+    (LIVE_STATUSES.has(data.status) ? ' live' : '');
+
+  // teams header
+  renderTeamSide(document.getElementById('team1-side'), data.team1);
+  renderTeamSide(document.getElementById('team2-side'), data.team2);
+
+  document.getElementById('col1-label').textContent = data.team1.name || 'Гравці';
+  document.getElementById('col2-label').textContent = data.team2.name || 'Гравці';
+
+  const isDraft = DRAFT_STATUSES.has(data.status);
+  const grid = document.getElementById('teams-grid');
+  const poolCol = document.getElementById('pool-col');
+
+  if (isDraft) {
+    grid.classList.add('draft-mode');
+    poolCol.style.display = '';
+
+    const cap1id = data.team1.captain_id;
+    const cap2id = data.team2.captain_id;
+    const cap1   = data.team1.players.find(p => p.player_id === cap1id);
+    const cap2   = data.team2.players.find(p => p.player_id === cap2id);
+
+    const pool = sortByRank([
+      ...data.team1.players.filter(p => p.player_id !== cap1id),
+      ...data.team2.players.filter(p => p.player_id !== cap2id),
+    ]);
+
+    document.getElementById('team1-players').innerHTML =
+      cap1 ? renderPlayer(cap1, 0, true) : '<div style="color:var(--dim);font-size:.85rem;padding:.5rem">—</div>';
+    document.getElementById('team2-players').innerHTML =
+      cap2 ? renderPlayer(cap2, 0, true) : '<div style="color:var(--dim);font-size:.85rem;padding:.5rem">—</div>';
+    document.getElementById('pool-players').innerHTML =
+      pool.map((p, i) => renderPlayer(p, i * 45)).join('');
+  } else {
+    grid.classList.remove('draft-mode');
+    poolCol.style.display = 'none';
+
+    document.getElementById('team1-players').innerHTML =
+      sortByRank(data.team1.players).map((p, i) => {
+        return renderPlayer(p, i * 45, p.player_id === data.team1.captain_id);
+      }).join('');
+    document.getElementById('team2-players').innerHTML =
+      sortByRank(data.team2.players).map((p, i) => {
+        return renderPlayer(p, i * 45, p.player_id === data.team2.captain_id);
+      }).join('');
+  }
+}
+
+// ── Poll indicator ─────────────────────────────────────────────────────
+function setPollIndicator(active) {
+  const el = document.getElementById('match-meta');
+  if (active) {
+    el.innerHTML = `<span style="color:var(--orange);animation:blink 1.2s ease infinite">● CAPTAIN PICK</span> &nbsp;·&nbsp; оновлення кожні 15с`;
+  }
+}
+
+// ── Poll: lightweight Faceit-only refresh ──────────────────────────────
+async function pollStatus() {
+  if (!currentRoomId) return;
+  try {
+    const res = await fetch(`/api/match/${encodeURIComponent(currentRoomId)}/poll`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // update status badge
+    const statusEl = document.getElementById('match-status');
+    const statusTxt = STATUS_MAP[data.status] || data.status || '—';
+    statusEl.textContent = statusTxt;
+    statusEl.className = 'match-status-badge' + (LIVE_STATUSES.has(data.status) ? ' live' : '');
+
+    // check for new players not in cache → fetch their opendota data
+    const allPlayers = [...(data.team1?.players || []), ...(data.team2?.players || [])];
+    const newPlayers = allPlayers.filter(p => p.player_id && !playerCache[p.player_id]);
+
+    if (newPlayers.length > 0) {
+      // fetch full data only for new players
+      const fetches = newPlayers.map(p =>
+        fetch(`/api/player/${encodeURIComponent(p.player_id)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d) playerCache[p.player_id] = d; })
+          .catch(() => {})
+      );
+      await Promise.all(fetches);
+      // re-render teams with updated cache
+      rerenderTeams(data);
+    }
+
+    // stop polling if match is no longer in draft/live state
+    if (!DRAFT_STATUSES.has(data.status)) {
+      stopPolling();
+      // update meta line
+      const metaEl = document.getElementById('match-meta');
+      metaEl.textContent = metaEl.textContent.replace(/●.*$/, '').trim();
+    }
+  } catch (_) {}
+}
+
+function rerenderTeams(pollData) {
+  // merge poll player list with cached opendota data
+  const merged = (team) => ({
+    ...team,
+    players: (team.players || []).map(p => playerCache[p.player_id] || p),
+  });
+  renderMatch({
+    ...pollData,
+    competition: document.getElementById('match-meta').textContent.split('·')[0]?.trim() || '',
+    region: '',
+    team1: merged(pollData.team1),
+    team2: merged(pollData.team2),
+  });
+}
+
+function startPolling() {
+  stopPolling();
+  setPollIndicator(true);
+  // first poll after 5s, then every 15s
+  pollTimer = setTimeout(() => {
+    pollStatus();
+    pollTimer = setInterval(pollStatus, 15000);
+  }, 5000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearTimeout(pollTimer); clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ── Initial load ───────────────────────────────────────────────────────
+async function loadMatch(roomId) {
+  const errEl = document.getElementById('error-banner');
+  errEl.classList.remove('visible');
+  const btn = document.getElementById('search-btn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  stopPolling();
+  playerCache = {};
+  currentRoomId = roomId;
+
+  buildSkeleton();
+  showView('loading-view');
+
+  try {
+    const res = await fetch(`/api/match/${encodeURIComponent(roomId)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+
+    // populate cache from full load
+    for (const team of [data.team1, data.team2]) {
+      for (const p of (team?.players || [])) {
+        if (p.player_id) playerCache[p.player_id] = p;
+      }
+    }
+
+    renderMatch(data);
+    showView('match-view');
+
+    // start polling if draft is active
+    if (DRAFT_STATUSES.has(data.status)) {
+      startPolling();
+    }
+  } catch (e) {
+    showView('input-view');
+    currentRoomId = null;
+    errEl.textContent = `Помилка: ${e.message}`;
+    errEl.classList.add('visible');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'АНАЛІЗ';
+  }
+}
+
+// ── Events ─────────────────────────────────────────────────────────────
+document.getElementById('search-btn').addEventListener('click', () => {
+  const val = document.getElementById('room-input').value.trim();
+  if (val) loadMatch(extractId(val));
+});
+
+document.getElementById('room-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('search-btn').click();
+});
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  stopPolling();
+  currentRoomId = null;
+  showView('input-view');
+});
+
+// ── Auto-load from launcher (?room= query param) ────────────────────────
+(function () {
+  const p = new URLSearchParams(window.location.search);
+  const r = p.get('room');
+  if (r) {
+    document.getElementById('room-input').value = r;
+    loadMatch(r);
+  }
+})();
+</script>
+</body>
+</html>
