@@ -1,31 +1,31 @@
-# Faceit Scout — Dota 2 Draft Analyzer
+# Faceit Scout — Аналізатор драфту Dota 2
 
-A lightweight desktop tool and web interface for scouting Faceit Dota 2 match rooms.  
-Displays each player's Dota 2 rank, primary position, Faceit ELO/level, and links their OpenDota profile — all fetched in parallel.
-
----
-
-## Features
-
-- **Match room lookup** — paste a Faceit room ID or full room URL to load both teams instantly
-- **Dota 2 rank** — fetched from OpenDota (Herald → Immortal with leaderboard position)
-- **Primary & secondary position** — calculated from the last 20 matches using lane role + GPM heuristics
-- **Faceit ELO & level** — fetched from the Faceit Data API
-- **Rank icons** — Dota 2 seasonal rank medal images rendered inline
-- **Captain badge** — highlights the team captain in each lineup
-- **Draft mode** — when a match is in `CAPTAIN_PICK` status, the view switches to a three-column layout: captain left, captain right, and a shared player pool sorted by rank in the center
-- **Live polling** — during an active draft, the app polls every 15 seconds and auto-fetches OpenDota data for newly added players (using a local cache to avoid re-fetching)
-- **Rank sorting** — players are sorted highest rank first within each team
-- **System tray** — minimize the launcher to the Windows system tray; double-click or use the tray menu to restore
-- **Single instance** — a Windows Mutex prevents multiple copies from running simultaneously
-- **Dark themed UI** — both the launcher (Tkinter) and the web page use a matching dark palette
+Легкий десктопний застосунок і веб-інтерфейс для скаутингу матч-кімнат Faceit у Dota 2.  
+Показує ранг, основну позицію, Faceit ELO/рівень кожного гравця та посилання на OpenDota — все завантажується паралельно.
 
 ---
 
-## Requirements
+## Функціонал
+
+- **Пошук матч-кімнати** — вставте Room ID або повне посилання на кімнату, щоб миттєво завантажити обидві команди
+- **Ранг Dota 2** — отримується з OpenDota (від Herald до Immortal з позицією в leaderboard)
+- **Основна та додаткова позиція** — розраховується за останніми 20 матчами на основі ролі лінії та GPM
+- **Faceit ELO та рівень** — отримується з Faceit Data API
+- **Іконки рангів** — зображення сезонних медалей Dota 2 відображаються прямо в картці гравця
+- **Значок капітана** — виділяє капітана команди в кожному складі
+- **Режим драфту** — коли матч у статусі `CAPTAIN_PICK`, інтерфейс перемикається на триколонковий вигляд: капітан ліворуч, капітан праворуч, спільний пул гравців відсортований за рангом у центрі
+- **Live оновлення** — під час активного драфту застосунок опитує сервер кожні 15 секунд і автоматично підтягує дані OpenDota для нових гравців (з локальним кешем для уникнення повторних запитів)
+- **Сортування за рангом** — гравці відсортовані від найвищого рангу до найнижчого всередині кожної команди
+- **Системний трей** — згорніть лаунчер у трей Windows; двічі клацніть або скористайтесь меню трею для відновлення
+- **Один екземпляр** — Windows Mutex запобігає запуску кількох копій одночасно
+- **Темний інтерфейс** — і лаунчер (Tkinter), і вебсторінка використовують однакову темну кольорову схему
+
+---
+
+## Вимоги
 
 - **Python 3.10+**
-- Dependencies listed in `requirements.txt`:
+- Залежності з `requirements.txt`:
 
 ```
 aiohttp>=3.9
@@ -38,107 +38,107 @@ pillow>=10.0
 
 ---
 
-## Running Without Building (Python)
+## Запуск без збірки (через Python)
 
-1. **Clone or download** the repository.
+1. **Клонуйте або завантажте** репозиторій.
 
-2. **Install dependencies:**
+2. **Встановіть залежності:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Launch the GUI:**
+3. **Запустіть GUI-лаунчер:**
    ```bash
    python launcher.py
    ```
 
-4. The launcher window will appear. Click **ЗАПУСТИТИ** (or press Enter after pasting a room ID/URL).  
-   The web interface will open automatically in your default browser at `http://127.0.0.1:8000`.
+4. З'явиться вікно лаунчера. Натисніть **ЗАПУСТИТИ** (або Enter після вставки Room ID/URL).  
+   Веб-інтерфейс відкриється автоматично у браузері за адресою `http://127.0.0.1:8000`.
 
-> You can also run the server directly without the GUI:
+> Також можна запустити сервер напряму без GUI:
 > ```bash
 > python server.py
 > ```
-> Then open `http://127.0.0.1:8000` manually.
+> Потім відкрийте `http://127.0.0.1:8000` вручну.
 
 ---
 
-## Building the .exe
+## Збірка .exe
 
-The project uses [PyInstaller](https://pyinstaller.org/) with a pre-configured spec file.
+Проєкт використовує [PyInstaller](https://pyinstaller.org/) із попередньо налаштованим spec-файлом.
 
-### Quick build (Windows)
+### Швидка збірка (Windows)
 
-Double-click `build.bat` or run it from a terminal:
+Двічі клацніть `build.bat` або запустіть його з терміналу:
 
 ```bat
 build.bat
 ```
 
-This will:
-1. Install PyInstaller via `pip install pyinstaller`
-2. Run `pyinstaller faceit_scout.spec --clean`
-3. Output the executable to `dist\FaceitScout.exe`
+Скрипт автоматично:
+1. Встановить PyInstaller командою `pip install pyinstaller`
+2. Виконає `pyinstaller faceit_scout.spec --clean`
+3. Збереже готовий файл у `dist\FaceitScout.exe`
 
-### Manual build
+### Ручна збірка
 
 ```bash
 pip install pyinstaller
 pyinstaller faceit_scout.spec --clean
 ```
 
-The spec file bundles:
-- `launcher.py` as the entry point
-- `index.html` and the `photo/` folder (rank medal images) as data files
-- All necessary hidden imports for uvicorn, anyio, pystray, and Pillow
+Spec-файл пакує:
+- `launcher.py` як точку входу
+- `index.html` та папку `photo/` (зображення медалей рангів) як дані
+- Усі необхідні приховані імпорти для uvicorn, anyio, pystray і Pillow
 
-The result is a **single-file `.exe`** (`console=False`, no terminal window) that runs completely standalone — no Python installation required on the target machine.
+Результат — **одиночний `.exe`-файл** (`console=False`, без вікна терміналу), який працює повністю автономно — Python на цільовому комп'ютері не потрібен.
 
 ---
 
-## Project Structure
+## Структура проєкту
 
 ```
 faceit-checker/
-├── launcher.py          # Tkinter GUI launcher + uvicorn server management
-├── server.py            # FastAPI backend (match/player API endpoints)
-├── faceit_checker.py    # CLI tool (terminal table output via Rich)
-├── index.html           # Web UI (single-page, vanilla JS)
-├── photo/               # Dota 2 rank medal images (.webp)
-├── requirements.txt     # Python dependencies
-├── faceit_scout.spec    # PyInstaller build spec
-└── build.bat            # One-click build script (Windows)
+├── launcher.py          # GUI-лаунчер на Tkinter + керування uvicorn-сервером
+├── server.py            # FastAPI бекенд (API-ендпоінти матчу та гравців)
+├── faceit_checker.py    # CLI-утиліта (таблиця у терміналі через Rich)
+├── index.html           # Веб-інтерфейс (односторінковий, vanilla JS)
+├── photo/               # Зображення медалей рангів Dota 2 (.webp)
+├── requirements.txt     # Залежності Python
+├── faceit_scout.spec    # Spec-файл PyInstaller для збірки
+└── build.bat            # Скрипт збірки одним кліком (Windows)
 ```
 
 ---
 
-## API Endpoints
+## API-ендпоінти
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Serves `index.html` |
-| `GET` | `/api/match/{room_id}` | Full match data — both teams with ranks and positions |
-| `GET` | `/api/match/{room_id}/poll` | Lightweight poll — Faceit data only, no OpenDota |
-| `GET` | `/api/player/{player_id}` | Full data for a single player by Faceit player ID |
+| Метод | Шлях | Опис |
+|-------|------|------|
+| `GET` | `/` | Віддає `index.html` |
+| `GET` | `/api/match/{room_id}` | Повні дані матчу — обидві команди з рангами та позиціями |
+| `GET` | `/api/match/{room_id}/poll` | Легкий опит — лише дані Faceit, без OpenDota |
+| `GET` | `/api/player/{player_id}` | Повні дані одного гравця за Faceit player ID |
 
 ---
 
-## CLI Usage
+## Використання CLI
 
-For terminal-only use without the GUI or web server:
+Для роботи лише в терміналі без GUI та вебсервера:
 
 ```bash
-# By match room ID
+# За Room ID матчу
 python faceit_checker.py --match 1-20ca85e4-1574-4705-b8b4-d1dce9938484
 
-# By player nicknames or profile URLs
+# За нікнеймами або посиланнями на профілі
 python faceit_checker.py --players Player1 Player2 Player3
 ```
 
-Output is a Rich table with Faceit name, Dota rank, primary position, and OpenDota link.
+Виводить таблицю Rich з нікнеймом Faceit, рангом Dota 2, основною позицією та посиланням на OpenDota.
 
 ---
 
-## Credits
+## Автор
 
-Created by **[Chasil](https://steamcommunity.com/id/Chasil/)**
+Створено **[Chasil](https://steamcommunity.com/id/Chasil/)**
