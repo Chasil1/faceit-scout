@@ -196,6 +196,14 @@ def main():
              bg=BG, fg=TEXT, font=("Segoe UI", 20, "bold")).pack()
     tk.Label(logo_f, text="DOTA 2 DRAFT HELPER",
              bg=BG, fg=ORANGE, font=("Segoe UI", 8, "bold")).pack(pady=(2, 0))
+    credits_lbl = tk.Label(logo_f, text="Created by Chasil",
+                           bg=BG, fg=DIM,
+                           font=("Segoe UI", 8), cursor="hand2")
+    credits_lbl.pack(pady=(4, 0))
+    credits_lbl.bind("<Button-1>",
+                     lambda _e: webbrowser.open("https://steamcommunity.com/id/Chasil/"))
+    credits_lbl.bind("<Enter>", lambda _e: credits_lbl.config(fg=ORANGE))
+    credits_lbl.bind("<Leave>", lambda _e: credits_lbl.config(fg=DIM))
 
     tk.Frame(root, bg=BORDER, height=1).pack(fill="x")
 
@@ -352,18 +360,6 @@ def main():
     if _tray_icon is None:
         # pystray unavailable → fall back to normal minimize
         tray_btn.config(text="  ЗГОРНУТИ  ", command=root.iconify)
-
-    # ── Credits ──────────────────────────────────────────────────────────────
-    credits_f = tk.Frame(root, bg=BG, pady=4)
-    credits_f.pack(fill="x", side="bottom")
-    credits_lbl = tk.Label(credits_f, text="Created by Chasil",
-                           bg=BG, fg="#444444",
-                           font=("Segoe UI", 7), cursor="hand2")
-    credits_lbl.pack()
-    credits_lbl.bind("<Button-1>",
-                     lambda _e: webbrowser.open("https://steamcommunity.com/id/Chasil/"))
-    credits_lbl.bind("<Enter>", lambda _e: credits_lbl.config(fg=DIM))
-    credits_lbl.bind("<Leave>", lambda _e: credits_lbl.config(fg="#444444"))
 
     root.mainloop()
 

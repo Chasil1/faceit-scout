@@ -116,19 +116,22 @@ body {
 }
 
 .credits {
-  position: fixed;
-  bottom: 1rem;
-  right: 1.25rem;
-  font-size: .7rem;
-  color: #333;
-  letter-spacing: .04em;
+  font-size: .78rem;
+  color: var(--dim);
+  letter-spacing: .06em;
 }
 .credits a {
-  color: #444;
+  color: var(--dim);
   text-decoration: none;
   transition: color .2s;
 }
-.credits a:hover { color: var(--dim); }
+.credits a:hover { color: var(--orange); }
+
+.top-bar-left {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
 
 .error-banner {
   display: none;
@@ -496,6 +499,7 @@ body {
     <div class="logo">FACEIT SCOUT</div>
     <div class="logo-divider"></div>
     <div class="logo-sub">Dota 2 · Draft Analyzer</div>
+    <div class="credits" style="margin-top:.45rem;">Created by <a href="https://steamcommunity.com/id/Chasil/" target="_blank" rel="noopener">Chasil</a></div>
   </div>
   <div class="search-wrap">
     <input type="text" id="room-input"
@@ -515,7 +519,10 @@ body {
 <!-- ═══ MATCH VIEW ══════════════════════════════════════════════════════ -->
 <div id="match-view" class="view">
   <div class="top-bar">
-    <button class="back-btn" id="back-btn">← НАЗАД</button>
+    <div class="top-bar-left">
+      <button class="back-btn" id="back-btn">← НАЗАД</button>
+      <div class="credits">Created by <a href="https://steamcommunity.com/id/Chasil/" target="_blank" rel="noopener">Chasil</a></div>
+    </div>
     <div class="match-meta-top" id="match-meta"></div>
   </div>
 
@@ -544,8 +551,6 @@ body {
   </div>
 </div>
 
-<div class="credits">Created by <a href="https://steamcommunity.com/id/Chasil/" target="_blank" rel="noopener">Chasil</a></div>
-
 <script>
 // ── Config ─────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -563,6 +568,31 @@ let currentRoomId = null;
 let pollTimer = null;
 // Cache: player_id → full player data (including opendota stats)
 let playerCache = {};
+
+// ── Session persistence (survives F5, no new OpenDota requests) ─────────
+function saveSession(roomId, data) {
+  try {
+    sessionStorage.setItem('faceit_room', roomId);
+    sessionStorage.setItem('faceit_data', JSON.stringify(data));
+    sessionStorage.setItem('faceit_cache', JSON.stringify(playerCache));
+  } catch (_) {}
+}
+function clearSession() {
+  try {
+    sessionStorage.removeItem('faceit_room');
+    sessionStorage.removeItem('faceit_data');
+    sessionStorage.removeItem('faceit_cache');
+  } catch (_) {}
+}
+function loadSession() {
+  try {
+    const roomId = sessionStorage.getItem('faceit_room');
+    const raw    = sessionStorage.getItem('faceit_data');
+    const cRaw   = sessionStorage.getItem('faceit_cache');
+    if (!roomId || !raw) return null;
+    return { roomId, data: JSON.parse(raw), cache: cRaw ? JSON.parse(cRaw) : {} };
+  } catch (_) { return null; }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function esc(s) {
@@ -862,6 +892,7 @@ async function loadMatch(roomId) {
       }
     }
 
+    saveSession(roomId, data);
     renderMatch(data);
     showView('match-view');
 
@@ -893,11 +924,21 @@ document.getElementById('room-input').addEventListener('keydown', e => {
 document.getElementById('back-btn').addEventListener('click', () => {
   stopPolling();
   currentRoomId = null;
+  clearSession();
   showView('input-view');
 });
 
-// ── Auto-load from launcher (?room= query param) ────────────────────────
+// ── Auto-load: restore from session (F5) or launcher (?room=) ──────────
 (function () {
+  const session = loadSession();
+  if (session) {
+    currentRoomId = session.roomId;
+    playerCache   = session.cache;
+    renderMatch(session.data);
+    showView('match-view');
+    if (DRAFT_STATUSES.has(session.data.status)) startPolling();
+    return;
+  }
   const p = new URLSearchParams(window.location.search);
   const r = p.get('room');
   if (r) {
