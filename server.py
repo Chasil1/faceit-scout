@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-FACEIT_KEY = "1ca837fd-a345-47c8-9adc-e78f717489e8"
+FACEIT_KEY = os.environ.get("FACEIT_KEY", "1ca837fd-a345-47c8-9adc-e78f717489e8")
 FACEIT_BASE = "https://open.faceit.com/data/v4"
 OPENDOTA_BASE = "https://api.opendota.com/api"
 STEAM64_BASE = 76561197960265728
@@ -337,4 +337,5 @@ async def poll_match(room_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
