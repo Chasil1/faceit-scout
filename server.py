@@ -2,10 +2,13 @@
 """Faceit Dota 2 Scout — FastAPI web server."""
 
 import asyncio
+import json
 import os
 import re
+from contextlib import asynccontextmanager
 
 import aiohttp
+import asyncpg
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +17,9 @@ FACEIT_KEY = os.environ.get("FACEIT_KEY", "1ca837fd-a345-47c8-9adc-e78f717489e8"
 FACEIT_BASE = "https://open.faceit.com/data/v4"
 OPENDOTA_BASE = "https://api.opendota.com/api"
 STEAM64_BASE = 76561197960265728
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+_pool: asyncpg.Pool | None = None
 
 RANK_NAMES = {
     1: "Herald",
@@ -95,6 +101,51 @@ def calc_position(matches):
     return primary, secondary
 
 
+async def get_opendota_cache(account_id: int) -> dict | None:
+    if not _pool:
+        return None
+    row = await _pool.fetchrow(
+        """
+        SELECT rank_tier, leaderboard_rank, recent_matches
+        FROM opendota_cache
+        WHERE account_id = $1 AND cached_at > NOW() - INTERVAL '30 days'
+        """,
+        account_id,
+    )
+    if row is None:
+        return None
+    return {
+        "rank_tier": row["rank_tier"],
+        "leaderboard_rank": row["leaderboard_rank"],
+        "recent_matches": row["recent_matches"],
+    }
+
+
+async def set_opendota_cache(
+    account_id: int,
+    rank_tier: int | None,
+    leaderboard_rank: int | None,
+    recent_matches: list,
+) -> None:
+    if not _pool:
+        return
+    await _pool.execute(
+        """
+        INSERT INTO opendota_cache (account_id, rank_tier, leaderboard_rank, recent_matches, cached_at)
+        VALUES ($1, $2, $3, $4::jsonb, NOW())
+        ON CONFLICT (account_id) DO UPDATE
+        SET rank_tier        = EXCLUDED.rank_tier,
+            leaderboard_rank = EXCLUDED.leaderboard_rank,
+            recent_matches   = EXCLUDED.recent_matches,
+            cached_at        = EXCLUDED.cached_at
+        """,
+        account_id,
+        rank_tier,
+        leaderboard_rank,
+        json.dumps(recent_matches),
+    )
+
+
 async def faceit_get(s, path):
     h = {"Authorization": f"Bearer {FACEIT_KEY}"}
     timeout = aiohttp.ClientTimeout(total=10)
@@ -135,30 +186,45 @@ async def fetch_player(session, roster_entry):
     }
 
     try:
-        coros = [faceit_get(session, f"/players/{pid}")]
-        if account_id:
-            coros += [
-                opendota_get(session, f"/players/{account_id}"),
-                opendota_get(session, f"/players/{account_id}/recentMatches"),
-            ]
-        responses = await asyncio.gather(*coros, return_exceptions=True)
-
-        fp = responses[0] if not isinstance(responses[0], Exception) else None
-        profile = (
-            responses[1]
-            if len(responses) > 1 and not isinstance(responses[1], Exception)
-            else None
+        # Always fetch fresh Faceit data
+        fp_responses = await asyncio.gather(
+            faceit_get(session, f"/players/{pid}"),
+            return_exceptions=True,
         )
-        recent = (
-            responses[2]
-            if len(responses) > 2 and not isinstance(responses[2], Exception)
-            else None
-        )
-
+        fp = fp_responses[0] if not isinstance(fp_responses[0], Exception) else None
         if fp:
             dota = (fp.get("games") or {}).get("dota2") or {}
             result["faceit_elo"] = dota.get("faceit_elo")
             result["faceit_level"] = dota.get("skill_level") or skill_level
+
+        if account_id is None:
+            return result
+
+        # Check cache before hitting OpenDota
+        cached = await get_opendota_cache(account_id)
+        if cached:
+            profile = {
+                "rank_tier": cached["rank_tier"],
+                "leaderboard_rank": cached["leaderboard_rank"],
+            }
+            recent = cached["recent_matches"]
+        else:
+            # Cache miss — fetch from OpenDota
+            od_responses = await asyncio.gather(
+                opendota_get(session, f"/players/{account_id}"),
+                opendota_get(session, f"/players/{account_id}/recentMatches"),
+                return_exceptions=True,
+            )
+            profile = od_responses[0] if not isinstance(od_responses[0], Exception) else None
+            recent = od_responses[1] if not isinstance(od_responses[1], Exception) else None
+            # Save to cache
+            if profile or recent:
+                await set_opendota_cache(
+                    account_id,
+                    profile.get("rank_tier") if profile else None,
+                    profile.get("leaderboard_rank") if profile else None,
+                    recent or [],
+                )
 
         if profile:
             major, label = rank_label(
@@ -176,7 +242,18 @@ async def fetch_player(session, roster_entry):
     return result
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _pool
+    if DATABASE_URL:
+        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+    yield
+    if _pool:
+        await _pool.close()
+        _pool = None
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Use APP_BASE_PATH from launcher.py for bundled .exe
 BASE_PATH = os.environ.get("APP_BASE_PATH", os.path.dirname(__file__))
@@ -276,18 +353,38 @@ async def get_player(player_id: str):
             }
 
             if account_id:
-                profile, recent = await asyncio.gather(
-                    opendota_get(session, f"/players/{account_id}"),
-                    opendota_get(session, f"/players/{account_id}/recentMatches"),
-                    return_exceptions=True,
-                )
-                if not isinstance(profile, Exception) and profile:
+                cached = await get_opendota_cache(account_id)
+                if cached:
+                    profile = {
+                        "rank_tier": cached["rank_tier"],
+                        "leaderboard_rank": cached["leaderboard_rank"],
+                    }
+                    recent = cached["recent_matches"]
+                else:
+                    profile, recent = await asyncio.gather(
+                        opendota_get(session, f"/players/{account_id}"),
+                        opendota_get(session, f"/players/{account_id}/recentMatches"),
+                        return_exceptions=True,
+                    )
+                    if isinstance(profile, Exception):
+                        profile = None
+                    if isinstance(recent, Exception):
+                        recent = None
+                    if profile or recent:
+                        await set_opendota_cache(
+                            account_id,
+                            profile.get("rank_tier") if profile else None,
+                            profile.get("leaderboard_rank") if profile else None,
+                            recent or [],
+                        )
+
+                if profile:
                     major, label = rank_label(
                         profile.get("rank_tier"), profile.get("leaderboard_rank")
                     )
                     result["dota_rank_major"] = major
                     result["dota_rank"] = label
-                if not isinstance(recent, Exception) and recent:
+                if recent:
                     result["position"], result["position2"] = calc_position(recent)
 
             return result
