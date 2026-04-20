@@ -2,6 +2,8 @@
 """Faceit Dota 2 Scout — FastAPI web server."""
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -850,33 +852,76 @@ async def fetch_faceit_dota_account_id(session: aiohttp.ClientSession, player_id
 
 
 # ── OAuth endpoints ────────────────────────────────────────────────────────
+def _generate_pkce_pair() -> tuple[str, str]:
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return verifier, challenge
+
+
 @app.get("/auth/login")
 async def auth_login():
-    """Redirect to Faceit OAuth."""
+    """Redirect to Faceit OAuth with PKCE."""
     if not FACEIT_CLIENT_ID:
         raise HTTPException(status_code=500, detail="OAuth not configured")
+
+    verifier, challenge = _generate_pkce_pair()
+
     params = urlencode({
         "redirect_popup": "false",
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
         "scope": "openid profile email",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
     })
-    return RedirectResponse(f"https://accounts.faceit.com/accounts?{params}")
+
+    pkce_token = jwt.encode(
+        {"v": verifier, "exp": datetime.utcnow() + timedelta(minutes=10)},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+
+    response = RedirectResponse(f"https://accounts.faceit.com/accounts?{params}")
+    response.set_cookie(
+        "oauth_pkce",
+        pkce_token,
+        httponly=True,
+        samesite="lax",
+        max_age=600,
+    )
+    return response
 
 
 @app.get("/auth/callback")
-async def auth_callback(code: str | None = None, error: str | None = None):
-    """Handle Faceit OAuth callback."""
+async def auth_callback(
+    code: str | None = None,
+    error: str | None = None,
+    oauth_pkce: str | None = Cookie(default=None),
+):
+    """Handle Faceit OAuth callback with PKCE verifier."""
     log.info(f"OAuth callback: code={code[:20] if code else None}, error={error}")
     if error or not code:
         log.error(f"OAuth callback error: {error}")
         return RedirectResponse("/?auth_error=1")
-    
+
     if not FACEIT_CLIENT_ID or not FACEIT_CLIENT_SECRET:
         log.error("OAuth not configured")
         raise HTTPException(status_code=500, detail="OAuth not configured")
-    
+
+    verifier: str | None = None
+    if oauth_pkce:
+        try:
+            payload = jwt.decode(oauth_pkce, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            verifier = payload.get("v")
+        except jwt.InvalidTokenError as e:
+            log.error("Invalid PKCE cookie: %s", e)
+
+    if not verifier:
+        log.error("Missing PKCE verifier")
+        return RedirectResponse("/?auth_error=6")
+
     # Exchange code for token
     async with aiohttp.ClientSession() as session:
         try:
@@ -886,6 +931,7 @@ async def auth_callback(code: str | None = None, error: str | None = None):
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": FACEIT_REDIRECT_URI,
+                    "code_verifier": verifier,
                 },
                 auth=aiohttp.BasicAuth(FACEIT_CLIENT_ID, FACEIT_CLIENT_SECRET),
             ) as resp:
@@ -933,6 +979,7 @@ async def auth_callback(code: str | None = None, error: str | None = None):
                 samesite="lax",
                 max_age=60 * 60 * 24 * JWT_EXPIRE_DAYS,
             )
+            response.delete_cookie("oauth_pkce")
             return response
             
         except Exception as e:
