@@ -824,12 +824,13 @@ async def auth_login():
     if not FACEIT_CLIENT_ID:
         raise HTTPException(status_code=500, detail="OAuth not configured")
     params = urlencode({
+        "redirect_popup": "true",
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
         "scope": "openid profile email",
     })
-    return RedirectResponse(f"https://accounts.faceit.com/?{params}")
+    return RedirectResponse(f"https://accounts.faceit.com/accounts?{params}")
 
 
 @app.get("/auth/callback")
