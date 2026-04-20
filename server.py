@@ -549,6 +549,84 @@ async def poll_match(room_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ReportCreate(BaseModel):
+    account_id: int
+    nickname: str | None = None
+    real_rank_tier: int | None = None
+    real_leaderboard_rank: int | None = None
+    match_room_id: str | None = None
+
+
+@app.post("/api/report")
+async def submit_report(body: ReportCreate):
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    row = await _pool.fetchrow(
+        """
+        INSERT INTO smurf_reports (account_id, nickname, real_rank_tier, real_leaderboard_rank, match_room_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        """,
+        body.account_id,
+        body.nickname,
+        body.real_rank_tier,
+        body.real_leaderboard_rank,
+        body.match_room_id,
+    )
+    return {"ok": True, "report_id": row["id"]}
+
+
+@app.get("/api/admin/reports")
+async def admin_list_reports():
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    rows = await _pool.fetch(
+        """
+        SELECT id, account_id, nickname, real_rank_tier, real_leaderboard_rank,
+               match_room_id, created_at, reviewed, action_taken
+        FROM smurf_reports
+        ORDER BY reviewed ASC, created_at DESC
+        LIMIT 200
+        """
+    )
+    out = []
+    for r in rows:
+        real_major, real_label = (0, None)
+        if r["real_rank_tier"]:
+            real_major, real_label = rank_label(r["real_rank_tier"], r["real_leaderboard_rank"])
+        out.append({
+            "id": r["id"],
+            "account_id": r["account_id"],
+            "nickname": r["nickname"],
+            "real_rank_tier": r["real_rank_tier"],
+            "real_leaderboard_rank": r["real_leaderboard_rank"],
+            "real_rank_major": real_major,
+            "real_rank": real_label,
+            "match_room_id": r["match_room_id"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "reviewed": r["reviewed"],
+            "action_taken": r["action_taken"],
+        })
+    return {"reports": out}
+
+
+@app.post("/api/admin/reports/{report_id}/review")
+async def admin_review_report(report_id: int, action: str = "dismiss"):
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    res = await _pool.execute(
+        """
+        UPDATE smurf_reports
+        SET reviewed = true, reviewed_at = NOW(), action_taken = $2
+        WHERE id = $1
+        """,
+        report_id, action,
+    )
+    if res.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="report not found")
+    return {"ok": True}
+
+
 @app.get("/api/smurfs")
 async def get_smurfs(ids: str = ""):
     """Return smurf flags for a comma-separated list of account_ids."""

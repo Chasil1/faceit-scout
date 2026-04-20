@@ -465,6 +465,175 @@ body {
   border-radius: 2px;
   letter-spacing: .05em;
 }
+
+/* ─── REPORT BAR ─────────────────────────────────────────────────────── */
+.report-bar {
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 1rem .5rem;
+}
+.report-smurf-btn {
+  background: transparent;
+  border: 1px solid #ff3b3b;
+  color: #ff3b3b;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .88rem;
+  font-weight: 700;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  padding: .6rem 2rem;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.report-smurf-btn:hover {
+  background: rgba(255,59,59,.12);
+  color: #fff;
+}
+
+/* ─── REPORT MODAL ───────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.75);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-box {
+  background: #181818;
+  border: 1px solid #333;
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.1rem;
+}
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #ff3b3b;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-close:hover { color: #fff; }
+.modal-section { margin-bottom: 1rem; }
+.modal-label {
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: .45rem;
+}
+.req { color: #ff3b3b; }
+.optional { color: #555; font-weight: 400; text-transform: none; letter-spacing: 0; font-size: .85em; }
+.report-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.rp-item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .7rem;
+  background: #202020;
+  border: 1px solid #2a2a2a;
+  cursor: pointer;
+  user-select: none;
+}
+.rp-item:hover { border-color: #ff3b3b; }
+.rp-item.selected { border-color: #ff3b3b; background: rgba(255,59,59,.1); }
+.rp-item img { width: 26px; height: 26px; border-radius: 2px; object-fit: cover; }
+.rp-item .rp-name { flex: 1; font-size: .9rem; font-weight: 600; }
+.rp-item .rp-rank { font-size: .75rem; color: #888; }
+.rp-item img.rp-rank-img { width: 22px; height: 24px; }
+.tier-grid-sm {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .35rem;
+}
+.tier-btn-sm {
+  background: #202020;
+  border: 1px solid #2a2a2a;
+  color: #f0f0f0;
+  padding: .4rem .2rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .78rem;
+  cursor: pointer;
+  text-align: center;
+}
+.tier-btn-sm:hover { border-color: #ff3b3b; }
+.tier-btn-sm.active { border-color: #ff3b3b; background: rgba(255,59,59,.12); color: #ff5500; }
+.stars-sm { display: flex; gap: .3rem; margin-top: .3rem; }
+.star-btn-sm {
+  background: #202020;
+  border: 1px solid #2a2a2a;
+  color: #f0f0f0;
+  padding: .35rem 0;
+  flex: 1;
+  font-family: 'Rajdhani', sans-serif;
+  cursor: pointer;
+}
+.star-btn-sm.active { border-color: #ff3b3b; background: rgba(255,59,59,.12); color: #ff5500; }
+.modal-input {
+  width: 100%;
+  background: #202020;
+  border: 1px solid #2a2a2a;
+  color: #f0f0f0;
+  padding: .45rem .7rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .95rem;
+}
+.modal-input:focus { outline: none; border-color: #ff3b3b; }
+.modal-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  margin-top: 1.1rem;
+}
+.modal-btn {
+  background: #202020;
+  border: 1px solid #333;
+  color: #f0f0f0;
+  padding: .55rem 1.1rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .85rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.modal-btn:hover { border-color: #555; }
+.modal-btn.primary { background: #ff3b3b; border-color: #ff3b3b; color: #fff; }
+.modal-btn.primary:hover { filter: brightness(1.1); }
+.report-feedback {
+  padding: .55rem .8rem;
+  font-size: .85rem;
+  font-weight: 600;
+  border-radius: 2px;
+  margin-bottom: .5rem;
+}
+.report-feedback.ok { background: rgba(50,200,80,.15); border: 1px solid #32c850; color: #32c850; }
+.report-feedback.err { background: rgba(255,59,59,.12); border: 1px solid #ff3b3b; color: #ff3b3b; }
+.hidden { display: none !important; }
 .rank-lb-overlay {
   position: absolute;
   bottom: 2px;
@@ -569,6 +738,45 @@ body {
     <div>
       <div class="col-label" id="col2-label">Гравці</div>
       <div id="team2-players"></div>
+    </div>
+  </div>
+
+  <div class="report-bar" id="report-bar" style="display:none">
+    <button class="report-smurf-btn" id="report-smurf-btn">⚑ Репорт смурфа</button>
+  </div>
+</div>
+
+<!-- Report Smurf Modal -->
+<div class="modal-overlay" id="report-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Репорт смурфа</span>
+      <button class="modal-close" id="report-close">✕</button>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-label">Гравець <span class="req">*</span></div>
+      <div id="report-player-list" class="report-player-list"></div>
+    </div>
+
+    <div class="modal-section" id="report-rank-section">
+      <div class="modal-label">Справжній ранг <span class="optional">(необов'язково)</span></div>
+      <div class="tier-grid-sm" id="report-tier-grid"></div>
+      <div class="stars-row hidden" id="report-star-wrap">
+        <div class="modal-label" style="margin-top:.5rem">Зірка</div>
+        <div class="stars-sm" id="report-stars"></div>
+      </div>
+      <div class="hidden" id="report-lb-wrap">
+        <div class="modal-label" style="margin-top:.5rem">Leaderboard #</div>
+        <input class="modal-input" id="report-lb" type="number" min="1" max="9999" placeholder="напр. 234">
+      </div>
+    </div>
+
+    <div id="report-feedback" class="report-feedback hidden"></div>
+
+    <div class="modal-actions">
+      <button class="modal-btn" id="report-cancel-btn">Скасувати</button>
+      <button class="modal-btn primary" id="report-submit-btn">Відправити</button>
     </div>
   </div>
 </div>
@@ -805,7 +1013,139 @@ function renderMatch(data) {
         return renderPlayer(p, i * 45, p.player_id === data.team2.captain_id);
       }).join('');
   }
+
+  // Show report button for finished matches
+  const isFinished = data.status === 'FINISHED';
+  document.getElementById('report-bar').style.display = isFinished ? 'flex' : 'none';
+  if (isFinished) {
+    const all = [...(data.team1?.players || []), ...(data.team2?.players || [])];
+    reportSetLobby(all, data.match_id || currentRoomId);
+  }
 }
+
+// ── Report Smurf modal ─────────────────────────────────────────────────
+const RANK_NAMES_REPORT = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
+let reportLobby = [];
+let reportRoomId = null;
+let reportState = { player: null, tier: null, star: null };
+
+function reportSetLobby(players, roomId) {
+  reportLobby = players.filter(p => p.account_id);
+  reportRoomId = roomId;
+}
+
+function reportBuildTierGrid() {
+  const grid = document.getElementById('report-tier-grid');
+  grid.innerHTML = Object.entries(RANK_NAMES_REPORT).map(([k,n]) =>
+    `<button class="tier-btn-sm" data-t="${k}">${n}</button>`
+  ).join('');
+  grid.querySelectorAll('.tier-btn-sm').forEach(b => b.onclick = () => {
+    grid.querySelectorAll('.tier-btn-sm').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    reportState.tier = +b.dataset.t;
+    const imm = reportState.tier === 8;
+    document.getElementById('report-star-wrap').classList.toggle('hidden', imm);
+    document.getElementById('report-lb-wrap').classList.toggle('hidden', !imm);
+    if (imm) reportState.star = null;
+  });
+
+  const stars = document.getElementById('report-stars');
+  stars.innerHTML = [1,2,3,4,5].map(s =>
+    `<button class="star-btn-sm" data-s="${s}">${s}</button>`
+  ).join('');
+  stars.querySelectorAll('.star-btn-sm').forEach(b => b.onclick = () => {
+    stars.querySelectorAll('.star-btn-sm').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    reportState.star = +b.dataset.s;
+  });
+}
+
+function reportBuildPlayerList() {
+  const list = document.getElementById('report-player-list');
+  list.innerHTML = reportLobby.map((p, i) => {
+    const avatar = p.avatar
+      ? `<img src="${esc(p.avatar)}" onerror="this.style.display='none'">`
+      : '<span style="width:26px;height:26px;background:#333;display:inline-block"></span>';
+    const rankSrc = `<img class="rp-rank-img" src="${rankImgSrc(p.dota_rank_major, p.dota_rank)}">`;
+    return `<div class="rp-item" data-i="${i}">
+      ${avatar}
+      <span class="rp-name">${esc(p.nickname || '?')}</span>
+      ${rankSrc}
+      <span class="rp-rank">${esc(p.dota_rank || '')}</span>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.rp-item').forEach(el => el.onclick = () => {
+    list.querySelectorAll('.rp-item').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    reportState.player = reportLobby[+el.dataset.i];
+  });
+}
+
+function openReportModal() {
+  reportState = { player: null, tier: null, star: null };
+  document.getElementById('report-feedback').className = 'report-feedback hidden';
+  document.getElementById('report-tier-grid').querySelectorAll('.tier-btn-sm').forEach(x => x.classList.remove('active'));
+  document.getElementById('report-stars').querySelectorAll('.star-btn-sm').forEach(x => x.classList.remove('active'));
+  document.getElementById('report-star-wrap').classList.add('hidden');
+  document.getElementById('report-lb-wrap').classList.add('hidden');
+  document.getElementById('report-lb').value = '';
+  reportBuildPlayerList();
+  document.getElementById('report-modal').style.display = 'flex';
+}
+
+function closeReportModal() {
+  document.getElementById('report-modal').style.display = 'none';
+}
+
+async function submitReport() {
+  if (!reportState.player) {
+    showReportFeedback('Вибери гравця', 'err');
+    return;
+  }
+  const p = reportState.player;
+  let real_rank_tier = null, real_leaderboard_rank = null;
+  if (reportState.tier) {
+    if (reportState.tier === 8) {
+      real_rank_tier = 80;
+      const lb = document.getElementById('report-lb').value.trim();
+      if (lb) real_leaderboard_rank = parseInt(lb);
+    } else {
+      real_rank_tier = reportState.tier * 10 + (reportState.star || 1);
+    }
+  }
+  try {
+    const r = await fetch('/api/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: p.account_id,
+        nickname: p.nickname,
+        real_rank_tier,
+        real_leaderboard_rank,
+        match_room_id: reportRoomId,
+      }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    showReportFeedback('Репорт надіслано', 'ok');
+    setTimeout(closeReportModal, 1500);
+  } catch (e) {
+    showReportFeedback('Помилка: ' + e.message, 'err');
+  }
+}
+
+function showReportFeedback(msg, type) {
+  const el = document.getElementById('report-feedback');
+  el.textContent = msg;
+  el.className = `report-feedback ${type}`;
+}
+
+document.getElementById('report-smurf-btn').onclick = openReportModal;
+document.getElementById('report-close').onclick = closeReportModal;
+document.getElementById('report-cancel-btn').onclick = closeReportModal;
+document.getElementById('report-submit-btn').onclick = submitReport;
+document.getElementById('report-modal').onclick = e => { if (e.target.id === 'report-modal') closeReportModal(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReportModal(); });
+reportBuildTierGrid();
 
 // ── Poll indicator ─────────────────────────────────────────────────────
 function setPollIndicator(active) {
