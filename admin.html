@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Faceit Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #111111;
+  --bg2:     #181818;
+  --bg3:     #202020;
+  --border:  #2a2a2a;
+  --border2: #333333;
+  --orange:  #FF5500;
+  --red:     #ff3b3b;
+  --text:    #f0f0f0;
+  --dim:     #888888;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: .15em;
+  color: var(--orange);
+  text-transform: uppercase;
+}
+
+.meta { color: var(--dim); font-size: .85rem; }
+a.back-link { color: var(--dim); text-decoration: none; font-size: .85rem; }
+a.back-link:hover { color: var(--orange); }
+
+.toolbar {
+  display: flex;
+  gap: .6rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+#search {
+  flex: 1;
+  min-width: 240px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .6rem .9rem;
+  font-family: inherit;
+  font-size: .95rem;
+  outline: none;
+}
+#search:focus { border-color: var(--orange); }
+
+.filter-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .6rem 1rem;
+  font-family: inherit;
+  font-size: .85rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.filter-btn.active { border-color: var(--orange); color: var(--orange); }
+.filter-btn:hover { background: var(--bg2); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+th, td {
+  text-align: left;
+  padding: .55rem .75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+th {
+  background: var(--bg3);
+  color: var(--dim);
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+}
+tr:hover td { background: var(--bg3); }
+tr.is-smurf td { background: rgba(255,59,59,.06); }
+tr.is-smurf:hover td { background: rgba(255,59,59,.10); }
+
+td.nick { font-weight: 600; }
+td.nick a { color: var(--text); text-decoration: none; }
+td.nick a:hover { color: var(--orange); }
+
+.avatar {
+  width: 28px; height: 28px;
+  border-radius: 3px;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: .5rem;
+  background: var(--bg3);
+}
+
+.rank-img-sm { width: 28px; height: 31px; object-fit: contain; vertical-align: middle; }
+
+.lvl {
+  display: inline-block;
+  min-width: 22px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: .78rem;
+  font-weight: 700;
+  background: #333;
+}
+.lvl.lv10 { background: #e04a1a; }
+.lvl.lv9, .lvl.lv8 { background: #c46218; }
+.lvl.lv7, .lvl.lv6 { background: #8a6b16; }
+.lvl.lv5, .lvl.lv4 { background: #4a5a1a; }
+
+.smurf-toggle {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .25rem .55rem;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  font-size: .75rem;
+  letter-spacing: .05em;
+  background: var(--bg3);
+  color: var(--dim);
+  user-select: none;
+}
+.smurf-toggle:hover { border-color: var(--red); color: var(--text); }
+.smurf-toggle.on {
+  background: rgba(255,59,59,.15);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.rank-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: .25rem .55rem;
+  font-family: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+.rank-btn:hover { border-color: var(--orange); }
+.rank-btn.empty { color: var(--dim); font-style: italic; }
+
+.state {
+  text-align: center;
+  color: var(--dim);
+  padding: 2rem;
+  font-size: .95rem;
+}
+
+/* Modal */
+.modal-bg {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.75);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-bg.open { display: flex; }
+
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal h2 {
+  font-size: 1rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 1rem;
+}
+.modal label {
+  display: block;
+  color: var(--dim);
+  font-size: .75rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: .4rem;
+}
+
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .4rem;
+  margin-bottom: .9rem;
+}
+.tier-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .5rem .2rem;
+  font-family: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+  text-align: center;
+}
+.tier-btn:hover { border-color: var(--orange); }
+.tier-btn.active { border-color: var(--orange); background: rgba(255,85,0,.12); color: var(--orange); }
+
+.star-row, .lb-row { margin-bottom: .9rem; }
+.stars {
+  display: flex;
+  gap: .3rem;
+}
+.star-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .4rem 0;
+  flex: 1;
+  font-family: inherit;
+  cursor: pointer;
+}
+.star-btn.active { border-color: var(--orange); background: rgba(255,85,0,.12); color: var(--orange); }
+
+#lb-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .5rem .7rem;
+  font-family: inherit;
+}
+#lb-input:focus { border-color: var(--orange); outline: none; }
+
+.modal-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: .55rem 1.1rem;
+  font-family: inherit;
+  font-size: .85rem;
+  letter-spacing: .05em;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--orange); }
+.btn.primary { background: var(--orange); border-color: var(--orange); color: #111; font-weight: 700; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: rgba(255,59,59,.12); }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Admin · Гравці</h1>
+  <span class="meta" id="count"></span>
+  <span style="flex:1"></span>
+  <a class="back-link" href="/">← На головну</a>
+</header>
+
+<div class="toolbar">
+  <input id="search" type="text" placeholder="Пошук за нікнеймом або account_id…" autocomplete="off">
+  <button class="filter-btn" data-filter="all">Всі</button>
+  <button class="filter-btn" data-filter="smurf">Тільки смурфи</button>
+</div>
+
+<div id="state" class="state">Завантаження…</div>
+<table id="tbl" style="display:none">
+  <thead>
+    <tr>
+      <th>Гравець</th>
+      <th>Faceit LVL</th>
+      <th>ELO</th>
+      <th>Ранг Dota</th>
+      <th>Smurf</th>
+      <th>Реальний ранг</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<!-- Rank picker modal -->
+<div class="modal-bg" id="rank-modal">
+  <div class="modal">
+    <h2 id="modal-title">Реальний ранг</h2>
+    <label>Тір</label>
+    <div class="tier-grid" id="tier-grid"></div>
+    <div class="star-row" id="star-wrap">
+      <label>Зірка</label>
+      <div class="stars" id="stars"></div>
+    </div>
+    <div class="lb-row hidden" id="lb-wrap">
+      <label>Leaderboard (Immortal)</label>
+      <input id="lb-input" type="number" min="1" max="5000" placeholder="напр. 234">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="cancel-btn">Скасувати</button>
+      <button class="btn primary" id="save-btn">Зберегти</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const RANK_NAMES = { 1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal' };
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function rankImgSrc(major, rankStr) {
+  if (!major) return '/photo/SeasonalRank0-0.webp';
+  if (major < 8) {
+    const star = (rankStr?.match(/\s(\d)$/) || [])[1] || '1';
+    return `/photo/SeasonalRank${major}-${star}.webp`;
+  }
+  const lb = (rankStr?.match(/#(\d+)/) || [])[1];
+  return (lb && parseInt(lb) <= 1000) ? '/photo/SeasonalRankTop2.webp' : '/photo/SeasonalRankTop0.webp';
+}
+
+let players = [];
+let filter = 'all';
+let query = '';
+let modalCtx = null;  // { account_id, tier, lb }
+
+// ── Load ───────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    const r = await fetch('/api/admin/players');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    players = data.players || [];
+    render();
+  } catch (e) {
+    document.getElementById('state').textContent = 'Помилка: ' + e.message;
+  }
+}
+
+function render() {
+  const q = query.trim().toLowerCase();
+  const list = players.filter(p => {
+    if (filter === 'smurf' && !p.is_smurf) return false;
+    if (!q) return true;
+    return (p.nickname || '').toLowerCase().includes(q) || String(p.account_id).includes(q);
+  });
+
+  document.getElementById('count').textContent = `${list.length} / ${players.length}`;
+
+  const tbody = document.getElementById('rows');
+  if (list.length === 0) {
+    document.getElementById('tbl').style.display = 'none';
+    document.getElementById('state').style.display = '';
+    document.getElementById('state').textContent = 'Порожньо.';
+    return;
+  }
+  document.getElementById('state').style.display = 'none';
+  document.getElementById('tbl').style.display = '';
+
+  tbody.innerHTML = list.map(p => {
+    const avatar = p.avatar
+      ? `<img class="avatar" src="${esc(p.avatar)}" onerror="this.style.display='none'">`
+      : `<span class="avatar"></span>`;
+    const name = p.nickname || '(без імені)';
+    const link = p.account_id ? `https://www.opendota.com/players/${p.account_id}` : '#';
+    const lvl = p.faceit_level || 0;
+    const elo = p.faceit_elo || '—';
+    const rankImg = `<img class="rank-img-sm" src="${rankImgSrc(p.dota_rank_major, p.dota_rank)}" title="${esc(p.dota_rank || 'Unranked')}">`;
+    const realRank = p.is_smurf
+      ? `<button class="rank-btn" data-acc="${p.account_id}">
+           <img class="rank-img-sm" src="${rankImgSrc(p.real_rank_major, p.real_rank)}">
+           ${esc(p.real_rank || '?')}
+         </button>`
+      : `<button class="rank-btn empty" data-acc="${p.account_id}" disabled>—</button>`;
+    return `
+      <tr class="${p.is_smurf ? 'is-smurf' : ''}" data-acc="${p.account_id}">
+        <td class="nick">${avatar}<a href="${esc(link)}" target="_blank" rel="noopener">${esc(name)}</a></td>
+        <td><span class="lvl lv${Math.min(lvl,10)}">${lvl || '?'}</span></td>
+        <td>${esc(elo)}</td>
+        <td>${rankImg} <span style="color:var(--dim);font-size:.8rem">${esc(p.dota_rank || '—')}</span></td>
+        <td>
+          <span class="smurf-toggle ${p.is_smurf ? 'on' : ''}" data-acc="${p.account_id}">
+            ${p.is_smurf ? '✓ SMURF' : '○ позначити'}
+          </span>
+        </td>
+        <td>${realRank}</td>
+      </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('.smurf-toggle').forEach(el => {
+    el.onclick = () => {
+      const acc = +el.dataset.acc;
+      const p = players.find(x => x.account_id === acc);
+      if (!p) return;
+      if (p.is_smurf) {
+        if (confirm(`Зняти мітку Smurf з ${p.nickname || acc}?`)) toggleOff(acc);
+      } else {
+        openModal(p);
+      }
+    };
+  });
+  tbody.querySelectorAll('.rank-btn:not([disabled])').forEach(el => {
+    el.onclick = () => {
+      const p = players.find(x => x.account_id === +el.dataset.acc);
+      if (p) openModal(p);
+    };
+  });
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────
+function buildModalControls() {
+  const tierGrid = document.getElementById('tier-grid');
+  tierGrid.innerHTML = Object.entries(RANK_NAMES).map(([k, name]) =>
+    `<button class="tier-btn" data-tier="${k}">${name}</button>`
+  ).join('');
+  const stars = document.getElementById('stars');
+  stars.innerHTML = [1,2,3,4,5].map(s => `<button class="star-btn" data-star="${s}">${s}</button>`).join('');
+
+  tierGrid.querySelectorAll('.tier-btn').forEach(b => b.onclick = () => {
+    tierGrid.querySelectorAll('.tier-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    modalCtx.tier = +b.dataset.tier;
+    const isImmortal = modalCtx.tier === 8;
+    document.getElementById('star-wrap').classList.toggle('hidden', isImmortal);
+    document.getElementById('lb-wrap').classList.toggle('hidden', !isImmortal);
+    if (isImmortal) modalCtx.star = null;
+  });
+  stars.querySelectorAll('.star-btn').forEach(b => b.onclick = () => {
+    stars.querySelectorAll('.star-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    modalCtx.star = +b.dataset.star;
+  });
+}
+
+function openModal(p) {
+  modalCtx = { account_id: p.account_id, tier: null, star: null, lb: null };
+  document.getElementById('modal-title').textContent = `Реальний ранг · ${p.nickname || p.account_id}`;
+
+  // reset
+  document.querySelectorAll('.tier-btn').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.star-btn').forEach(x => x.classList.remove('active'));
+  document.getElementById('lb-input').value = '';
+  document.getElementById('star-wrap').classList.remove('hidden');
+  document.getElementById('lb-wrap').classList.add('hidden');
+
+  // prefill from existing real rank
+  if (p.real_rank_tier) {
+    const major = Math.floor(p.real_rank_tier / 10);
+    const minor = p.real_rank_tier % 10;
+    modalCtx.tier = major;
+    const tb = document.querySelector(`.tier-btn[data-tier="${major}"]`);
+    if (tb) tb.classList.add('active');
+    if (major === 8) {
+      document.getElementById('star-wrap').classList.add('hidden');
+      document.getElementById('lb-wrap').classList.remove('hidden');
+      if (p.real_leaderboard_rank) document.getElementById('lb-input').value = p.real_leaderboard_rank;
+    } else if (minor) {
+      modalCtx.star = minor;
+      const sb = document.querySelector(`.star-btn[data-star="${minor}"]`);
+      if (sb) sb.classList.add('active');
+    }
+  }
+
+  document.getElementById('rank-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('rank-modal').classList.remove('open');
+  modalCtx = null;
+}
+
+async function save() {
+  if (!modalCtx) return;
+  const { account_id, tier } = modalCtx;
+  if (!tier) { alert('Вибери тір'); return; }
+  let rank_tier, lb = null;
+  if (tier === 8) {
+    rank_tier = 80;
+    const lbVal = document.getElementById('lb-input').value.trim();
+    if (lbVal) lb = parseInt(lbVal);
+  } else {
+    const star = modalCtx.star || 1;
+    rank_tier = tier * 10 + star;
+  }
+  try {
+    const r = await fetch(`/api/admin/smurf/${account_id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_smurf: true, real_rank_tier: rank_tier, real_leaderboard_rank: lb })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    closeModal();
+    await load();
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+  }
+}
+
+async function toggleOff(account_id) {
+  try {
+    const r = await fetch(`/api/admin/smurf/${account_id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_smurf: false })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await load();
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+  }
+}
+
+// ── Wire up ────────────────────────────────────────────────────────────
+document.getElementById('search').oninput = (e) => { query = e.target.value; render(); };
+document.querySelectorAll('.filter-btn').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.filter-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    filter = b.dataset.filter;
+    render();
+  };
+});
+document.querySelector('.filter-btn[data-filter="all"]').classList.add('active');
+document.getElementById('cancel-btn').onclick = closeModal;
+document.getElementById('save-btn').onclick = save;
+document.getElementById('rank-modal').onclick = (e) => { if (e.target.id === 'rank-modal') closeModal(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+buildModalControls();
+load();
+</script>
+</body>
+</html>

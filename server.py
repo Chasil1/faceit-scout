@@ -13,6 +13,7 @@ import asyncpg
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("faceit")
@@ -112,7 +113,8 @@ async def get_opendota_cache(account_id: int) -> dict | None:
     try:
         row = await _pool.fetchrow(
             """
-            SELECT rank_tier, leaderboard_rank, recent_matches
+            SELECT rank_tier, leaderboard_rank, recent_matches,
+                   is_smurf, real_rank_tier, real_leaderboard_rank
             FROM opendota_cache
             WHERE account_id = $1 AND cached_at > NOW() - INTERVAL '30 days'
             """,
@@ -129,6 +131,34 @@ async def get_opendota_cache(account_id: int) -> dict | None:
         "rank_tier": row["rank_tier"],
         "leaderboard_rank": row["leaderboard_rank"],
         "recent_matches": row["recent_matches"],
+        "is_smurf": row["is_smurf"],
+        "real_rank_tier": row["real_rank_tier"],
+        "real_leaderboard_rank": row["real_leaderboard_rank"],
+    }
+
+
+async def get_smurf_info(account_id: int) -> dict | None:
+    """Fetch manual smurf flags regardless of cache age."""
+    if not _pool:
+        return None
+    try:
+        row = await _pool.fetchrow(
+            """
+            SELECT is_smurf, real_rank_tier, real_leaderboard_rank
+            FROM opendota_cache
+            WHERE account_id = $1
+            """,
+            account_id,
+        )
+    except Exception as e:
+        log.error("smurf read failed for %s: %s", account_id, e)
+        return None
+    if row is None or not row["is_smurf"]:
+        return None
+    return {
+        "is_smurf": True,
+        "real_rank_tier": row["real_rank_tier"],
+        "real_leaderboard_rank": row["real_leaderboard_rank"],
     }
 
 
@@ -137,6 +167,11 @@ async def set_opendota_cache(
     rank_tier: int | None,
     leaderboard_rank: int | None,
     recent_matches: list,
+    nickname: str | None = None,
+    avatar: str | None = None,
+    faceit_player_id: str | None = None,
+    faceit_level: int | None = None,
+    faceit_elo: int | None = None,
 ) -> None:
     if not _pool:
         log.warning("cache write skipped: pool is None")
@@ -144,18 +179,31 @@ async def set_opendota_cache(
     try:
         await _pool.execute(
             """
-            INSERT INTO opendota_cache (account_id, rank_tier, leaderboard_rank, recent_matches, cached_at)
-            VALUES ($1, $2, $3, $4::jsonb, NOW())
+            INSERT INTO opendota_cache (
+                account_id, rank_tier, leaderboard_rank, recent_matches, cached_at,
+                nickname, avatar, faceit_player_id, faceit_level, faceit_elo
+            )
+            VALUES ($1, $2, $3, $4::jsonb, NOW(), $5, $6, $7, $8, $9)
             ON CONFLICT (account_id) DO UPDATE
             SET rank_tier        = EXCLUDED.rank_tier,
                 leaderboard_rank = EXCLUDED.leaderboard_rank,
                 recent_matches   = EXCLUDED.recent_matches,
-                cached_at        = EXCLUDED.cached_at
+                cached_at        = EXCLUDED.cached_at,
+                nickname         = COALESCE(EXCLUDED.nickname, opendota_cache.nickname),
+                avatar           = COALESCE(EXCLUDED.avatar, opendota_cache.avatar),
+                faceit_player_id = COALESCE(EXCLUDED.faceit_player_id, opendota_cache.faceit_player_id),
+                faceit_level     = COALESCE(EXCLUDED.faceit_level, opendota_cache.faceit_level),
+                faceit_elo       = COALESCE(EXCLUDED.faceit_elo, opendota_cache.faceit_elo)
             """,
             account_id,
             rank_tier,
             leaderboard_rank,
             json.dumps(recent_matches),
+            nickname,
+            avatar,
+            faceit_player_id,
+            faceit_level,
+            faceit_elo,
         )
         log.info("cache write ok for %s", account_id)
     except Exception as e:
@@ -188,6 +236,7 @@ async def fetch_player(session, roster_entry):
 
     result = {
         "player_id": pid,
+        "account_id": account_id,
         "nickname": nickname,
         "avatar": avatar,
         "faceit_elo": None,
@@ -196,6 +245,9 @@ async def fetch_player(session, roster_entry):
         "dota_rank": "Unranked",
         "position": None,
         "position2": None,
+        "is_smurf": False,
+        "real_rank_major": 0,
+        "real_rank": None,
         "opendota_link": f"https://www.opendota.com/players/{account_id}"
         if account_id
         else None,
@@ -218,12 +270,14 @@ async def fetch_player(session, roster_entry):
 
         # Check cache before hitting OpenDota
         cached = await get_opendota_cache(account_id)
+        smurf_row = None
         if cached:
             profile = {
                 "rank_tier": cached["rank_tier"],
                 "leaderboard_rank": cached["leaderboard_rank"],
             }
             recent = cached["recent_matches"]
+            smurf_row = cached
         else:
             # Cache miss — fetch from OpenDota
             od_responses = await asyncio.gather(
@@ -233,14 +287,21 @@ async def fetch_player(session, roster_entry):
             )
             profile = od_responses[0] if not isinstance(od_responses[0], Exception) else None
             recent = od_responses[1] if not isinstance(od_responses[1], Exception) else None
-            # Save to cache
+            # Save to cache (preserves manual smurf fields via UPSERT SET clause)
             if profile or recent:
                 await set_opendota_cache(
                     account_id,
                     profile.get("rank_tier") if profile else None,
                     profile.get("leaderboard_rank") if profile else None,
                     recent or [],
+                    nickname=nickname,
+                    avatar=avatar,
+                    faceit_player_id=pid,
+                    faceit_level=result["faceit_level"],
+                    faceit_elo=result["faceit_elo"],
                 )
+            # Fresh write doesn't return smurf flags — fetch them explicitly
+            smurf_row = await get_smurf_info(account_id)
 
         if profile:
             major, label = rank_label(
@@ -251,6 +312,15 @@ async def fetch_player(session, roster_entry):
 
         if recent:
             result["position"], result["position2"] = calc_position(recent)
+
+        if smurf_row and smurf_row.get("is_smurf"):
+            result["is_smurf"] = True
+            rmajor, rlabel = rank_label(
+                smurf_row.get("real_rank_tier"),
+                smurf_row.get("real_leaderboard_rank"),
+            )
+            result["real_rank_major"] = rmajor
+            result["real_rank"] = rlabel
 
     except Exception:
         pass
@@ -366,6 +436,7 @@ async def get_player(player_id: str):
 
             result = {
                 "player_id": player_id,
+                "account_id": account_id,
                 "nickname": nickname,
                 "avatar": avatar,
                 "faceit_elo": faceit_elo,
@@ -374,6 +445,9 @@ async def get_player(player_id: str):
                 "dota_rank": "Unranked",
                 "position": None,
                 "position2": None,
+                "is_smurf": False,
+                "real_rank_major": 0,
+                "real_rank": None,
                 "opendota_link": f"https://www.opendota.com/players/{account_id}"
                 if account_id
                 else None,
@@ -381,12 +455,14 @@ async def get_player(player_id: str):
 
             if account_id:
                 cached = await get_opendota_cache(account_id)
+                smurf_row = None
                 if cached:
                     profile = {
                         "rank_tier": cached["rank_tier"],
                         "leaderboard_rank": cached["leaderboard_rank"],
                     }
                     recent = cached["recent_matches"]
+                    smurf_row = cached
                 else:
                     profile, recent = await asyncio.gather(
                         opendota_get(session, f"/players/{account_id}"),
@@ -403,7 +479,13 @@ async def get_player(player_id: str):
                             profile.get("rank_tier") if profile else None,
                             profile.get("leaderboard_rank") if profile else None,
                             recent or [],
+                            nickname=nickname,
+                            avatar=avatar,
+                            faceit_player_id=player_id,
+                            faceit_level=faceit_level,
+                            faceit_elo=faceit_elo,
                         )
+                    smurf_row = await get_smurf_info(account_id)
 
                 if profile:
                     major, label = rank_label(
@@ -413,6 +495,15 @@ async def get_player(player_id: str):
                     result["dota_rank"] = label
                 if recent:
                     result["position"], result["position2"] = calc_position(recent)
+
+                if smurf_row and smurf_row.get("is_smurf"):
+                    result["is_smurf"] = True
+                    rmajor, rlabel = rank_label(
+                        smurf_row.get("real_rank_tier"),
+                        smurf_row.get("real_leaderboard_rank"),
+                    )
+                    result["real_rank_major"] = rmajor
+                    result["real_rank"] = rlabel
 
             return result
     except Exception as e:
@@ -456,6 +547,87 @@ async def poll_match(room_id: str):
         raise HTTPException(status_code=e.status, detail=f"Faceit API {e.status}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin")
+async def admin_page():
+    path = os.path.join(BASE_PATH, "admin.html")
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/api/admin/players")
+async def admin_list_players():
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    rows = await _pool.fetch(
+        """
+        SELECT account_id, nickname, avatar, faceit_player_id,
+               faceit_level, faceit_elo, rank_tier, leaderboard_rank,
+               is_smurf, real_rank_tier, real_leaderboard_rank,
+               cached_at, updated_manually_at
+        FROM opendota_cache
+        ORDER BY COALESCE(updated_manually_at, cached_at) DESC
+        LIMIT 1000
+        """
+    )
+    out = []
+    for r in rows:
+        major, label = rank_label(r["rank_tier"], r["leaderboard_rank"])
+        real_major, real_label = (0, None)
+        if r["is_smurf"]:
+            real_major, real_label = rank_label(r["real_rank_tier"], r["real_leaderboard_rank"])
+        out.append({
+            "account_id": r["account_id"],
+            "nickname": r["nickname"],
+            "avatar": r["avatar"],
+            "faceit_player_id": r["faceit_player_id"],
+            "faceit_level": r["faceit_level"],
+            "faceit_elo": r["faceit_elo"],
+            "rank_tier": r["rank_tier"],
+            "leaderboard_rank": r["leaderboard_rank"],
+            "dota_rank_major": major,
+            "dota_rank": label,
+            "is_smurf": r["is_smurf"],
+            "real_rank_tier": r["real_rank_tier"],
+            "real_leaderboard_rank": r["real_leaderboard_rank"],
+            "real_rank_major": real_major,
+            "real_rank": real_label,
+            "cached_at": r["cached_at"].isoformat() if r["cached_at"] else None,
+            "updated_manually_at": r["updated_manually_at"].isoformat() if r["updated_manually_at"] else None,
+        })
+    return {"players": out}
+
+
+class SmurfUpdate(BaseModel):
+    is_smurf: bool
+    real_rank_tier: int | None = None
+    real_leaderboard_rank: int | None = None
+
+
+@app.post("/api/admin/smurf/{account_id}")
+async def admin_set_smurf(account_id: int, body: SmurfUpdate):
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    if body.is_smurf and body.real_rank_tier is None:
+        raise HTTPException(status_code=400, detail="real_rank_tier required when is_smurf=true")
+    result = await _pool.execute(
+        """
+        UPDATE opendota_cache
+        SET is_smurf              = $2,
+            real_rank_tier        = $3,
+            real_leaderboard_rank = $4,
+            updated_manually_at   = NOW()
+        WHERE account_id = $1
+        """,
+        account_id,
+        body.is_smurf,
+        body.real_rank_tier if body.is_smurf else None,
+        body.real_leaderboard_rank if body.is_smurf else None,
+    )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="player not in cache")
+    return {"ok": True, "account_id": account_id, "is_smurf": body.is_smurf}
 
 
 if __name__ == "__main__":
