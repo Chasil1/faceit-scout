@@ -796,31 +796,24 @@ def get_current_user(request: Request) -> dict | None:
     return verify_jwt_token(token)
 
 
-async def save_user_to_db(
-    faceit_id: str,
-    nickname: str,
-    avatar: str | None,
-    dota_account_id: int | None = None,
-):
+async def save_user_to_db(faceit_id: str, nickname: str, avatar: str | None):
     """Save or update user in database."""
     if not _pool:
         return
     try:
         await _pool.execute(
             """
-            INSERT INTO users (faceit_id, nickname, avatar, dota_account_id, last_login)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO users (faceit_id, nickname, avatar, last_login)
+            VALUES ($1, $2, $3, NOW())
             ON CONFLICT (faceit_id)
             DO UPDATE SET
                 nickname = EXCLUDED.nickname,
                 avatar = EXCLUDED.avatar,
-                dota_account_id = COALESCE(EXCLUDED.dota_account_id, users.dota_account_id),
                 last_login = NOW()
             """,
             faceit_id,
             nickname,
             avatar,
-            dota_account_id,
         )
     except Exception as e:
         log.error("Failed to save user to DB: %s", e)
@@ -964,17 +957,11 @@ async def auth_callback(
                     return RedirectResponse("/?auth_error=4")
                 user_data = await resp.json()
             
-            # Fetch Dota2 account_id from Faceit Data API (for self-review blocking)
-            dota_account_id = await fetch_faceit_dota_account_id(
-                session, user_data["player_id"]
-            )
-
             # Save user to database
             await save_user_to_db(
                 user_data["player_id"],
                 user_data["nickname"],
                 user_data.get("avatar"),
-                dota_account_id,
             )
 
             # Create JWT
