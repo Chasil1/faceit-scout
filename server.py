@@ -9,6 +9,7 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import aiohttp
 import asyncpg
@@ -822,14 +823,13 @@ async def auth_login():
     """Redirect to Faceit OAuth."""
     if not FACEIT_CLIENT_ID:
         raise HTTPException(status_code=500, detail="OAuth not configured")
-    auth_url = (
-        f"https://accounts.faceit.com/oauth/authorize"
-        f"?client_id={FACEIT_CLIENT_ID}"
-        f"&redirect_uri={FACEIT_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope=openid email profile"
-    )
-    return RedirectResponse(auth_url)
+    params = urlencode({
+        "client_id": FACEIT_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": FACEIT_REDIRECT_URI,
+        "scope": "openid profile email",
+    })
+    return RedirectResponse(f"https://auth.faceit.com/v1/authorize?{params}")
 
 
 @app.get("/auth/callback")
@@ -848,14 +848,13 @@ async def auth_callback(code: str | None = None, error: str | None = None):
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(
-                "https://accounts.faceit.com/oauth/token",
+                "https://api.faceit.com/auth/v1/oauth/token",
                 data={
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": FACEIT_REDIRECT_URI,
-                    "client_id": FACEIT_CLIENT_ID,
-                    "client_secret": FACEIT_CLIENT_SECRET,
                 },
+                auth=aiohttp.BasicAuth(FACEIT_CLIENT_ID, FACEIT_CLIENT_SECRET),
             ) as resp:
                 if resp.status != 200:
                     log.error("OAuth token exchange failed: %s", await resp.text())
