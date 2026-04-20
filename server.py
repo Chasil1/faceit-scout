@@ -860,7 +860,7 @@ def _generate_pkce_pair() -> tuple[str, str]:
 
 
 @app.get("/auth/login")
-async def auth_login():
+async def auth_login(popup: bool = False):
     """Redirect to Faceit OAuth with PKCE."""
     if not FACEIT_CLIENT_ID:
         raise HTTPException(status_code=500, detail="OAuth not configured")
@@ -880,11 +880,12 @@ async def auth_login():
     }, quote_via=quote)
 
     pkce_token = jwt.encode(
-        {"v": verifier, "s": state, "exp": datetime.utcnow() + timedelta(minutes=10)},
+        {"v": verifier, "s": state, "p": popup, "exp": datetime.utcnow() + timedelta(minutes=10)},
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )
 
+    log.info("OAuth login initiated: popup=%s", popup)
     response = RedirectResponse(f"https://accounts.faceit.com/accounts?{params}")
     response.set_cookie(
         "oauth_pkce",
@@ -914,10 +915,12 @@ async def auth_callback(
         raise HTTPException(status_code=500, detail="OAuth not configured")
 
     verifier: str | None = None
+    is_popup = False
     if oauth_pkce:
         try:
             payload = jwt.decode(oauth_pkce, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             verifier = payload.get("v")
+            is_popup = bool(payload.get("p", False))
             expected_state = payload.get("s")
             if expected_state and state != expected_state:
                 log.error("State mismatch: expected %s got %s", expected_state, state)
@@ -976,9 +979,9 @@ async def auth_callback(
 
             # Create JWT
             jwt_token = create_jwt_token(user_data)
-            
-            # Redirect with cookie
-            response = RedirectResponse("/", status_code=303)
+
+            dest = "/auth/done" if is_popup else "/"
+            response = RedirectResponse(dest, status_code=303)
             response.set_cookie(
                 "faceit_token",
                 jwt_token,
@@ -1000,6 +1003,105 @@ async def auth_logout():
     response = RedirectResponse("/", status_code=303)
     response.delete_cookie("faceit_token")
     return response
+
+
+_AUTH_DONE_HTML = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Вхід успішний</title></head>
+<body>
+<script>
+try {
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage({type:'auth_done'}, window.location.origin);
+  }
+} catch(e) {}
+setTimeout(function(){ window.close(); }, 300);
+</script>
+<p style="font-family:sans-serif;padding:2rem">Вхід успішний. Закрийте це вікно.</p>
+</body></html>"""
+
+
+@app.get("/auth/done")
+async def auth_done():
+    return HTMLResponse(_AUTH_DONE_HTML)
+
+
+class ExchangeCode(BaseModel):
+    code: str
+    state: str | None = None
+
+
+@app.post("/api/auth/exchange_code")
+async def exchange_code(
+    body: ExchangeCode,
+    oauth_pkce: str | None = Cookie(default=None),
+):
+    """Exchange auth code received via Faceit postMessage popup flow."""
+    if not oauth_pkce:
+        raise HTTPException(status_code=400, detail="No PKCE session")
+    try:
+        payload = jwt.decode(oauth_pkce, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        verifier = payload.get("v")
+        expected_state = payload.get("s")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid PKCE: {e}")
+
+    if not verifier:
+        raise HTTPException(status_code=400, detail="Missing verifier")
+    if expected_state and body.state and body.state != expected_state:
+        log.error("State mismatch in exchange_code: %s vs %s", expected_state, body.state)
+        raise HTTPException(status_code=400, detail="State mismatch")
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(
+                "https://api.faceit.com/auth/v1/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": body.code,
+                    "redirect_uri": FACEIT_REDIRECT_URI,
+                    "code_verifier": verifier,
+                },
+                auth=aiohttp.BasicAuth(FACEIT_CLIENT_ID, FACEIT_CLIENT_SECRET),
+            ) as resp:
+                if resp.status != 200:
+                    txt = await resp.text()
+                    log.error("exchange_code token failed: %s", txt)
+                    raise HTTPException(status_code=400, detail="Token exchange failed")
+                token_data = await resp.json()
+                access_token = token_data.get("access_token")
+
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access token")
+
+            async with session.get(
+                "https://api.faceit.com/auth/v1/resources/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail="Userinfo failed")
+                user_data = await resp.json()
+
+            dota_account_id = await fetch_faceit_dota_account_id(session, user_data["player_id"])
+            await save_user_to_db(
+                user_data["player_id"], user_data["nickname"],
+                user_data.get("avatar"), dota_account_id,
+            )
+
+            jwt_token = create_jwt_token(user_data)
+            response = JSONResponse({"ok": True})
+            response.set_cookie(
+                "faceit_token", jwt_token,
+                httponly=True, samesite="lax",
+                max_age=60 * 60 * 24 * JWT_EXPIRE_DAYS,
+            )
+            response.delete_cookie("oauth_pkce")
+            return response
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error("exchange_code error: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/auth/me")

@@ -832,7 +832,7 @@ body {
 <!-- ═══ AUTH BAR ════════════════════════════════════════════════════════ -->
 <div class="auth-bar" id="auth-bar">
   <div id="auth-logged-out" style="display:none">
-    <a href="/auth/login" class="auth-btn">ВХІД ЧЕРЕЗ FACEIT</a>
+    <a href="/auth/login" class="auth-btn" id="login-btn" onclick="return openLoginPopup()">ВХІД ЧЕРЕЗ FACEIT</a>
   </div>
   <div id="auth-logged-in" class="user-menu" style="display:none">
     <img id="user-avatar" class="user-avatar" src="" alt="">
@@ -1580,6 +1580,55 @@ checkAuth();
 
 document.getElementById('logout-btn').addEventListener('click', () => {
   window.location.href = '/auth/logout';
+});
+
+// ── Login popup ────────────────────────────────────────────────────────
+let _loginPopup = null;
+
+function openLoginPopup() {
+  const w = 560, h = 680;
+  const left = Math.round(screen.width / 2 - w / 2);
+  const top  = Math.round(screen.height / 2 - h / 2);
+  _loginPopup = window.open(
+    '/auth/login?popup=1',
+    'faceit_login',
+    `popup=yes,width=${w},height=${h},left=${left},top=${top}`
+  );
+  if (!_loginPopup) return true; // blocked — fallback to normal nav
+  return false;
+}
+
+window.addEventListener('message', async (evt) => {
+  // Case 1: our /auth/done page notifies us after server-side callback
+  if (evt.origin === location.origin && evt.data && evt.data.type === 'auth_done') {
+    if (_loginPopup && !_loginPopup.closed) _loginPopup.close();
+    _loginPopup = null;
+    await checkAuth();
+    return;
+  }
+
+  // Case 2: Faceit sends the code directly via postMessage (popup mode)
+  if (evt.origin === 'https://accounts.faceit.com') {
+    let code, state;
+    try {
+      const d = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
+      code  = d && d.code;
+      state = d && d.state;
+    } catch (_) {}
+    if (!code) return;
+    try {
+      const res = await fetch('/api/auth/exchange_code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, state: state || '' }),
+      });
+      if (res.ok) {
+        if (_loginPopup && !_loginPopup.closed) _loginPopup.close();
+        _loginPopup = null;
+        await checkAuth();
+      }
+    } catch (e) { console.error('auth exchange failed', e); }
+  }
 });
 
 // ── Profile modal ──────────────────────────────────────────────────────
