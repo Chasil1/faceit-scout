@@ -835,10 +835,13 @@ async def auth_login():
 @app.get("/auth/callback")
 async def auth_callback(code: str | None = None, error: str | None = None):
     """Handle Faceit OAuth callback."""
+    log.info(f"OAuth callback: code={code[:20] if code else None}, error={error}")
     if error or not code:
+        log.error(f"OAuth callback error: {error}")
         return RedirectResponse("/?auth_error=1")
     
     if not FACEIT_CLIENT_ID or not FACEIT_CLIENT_SECRET:
+        log.error("OAuth not configured")
         raise HTTPException(status_code=500, detail="OAuth not configured")
     
     # Exchange code for token
