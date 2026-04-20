@@ -30,6 +30,60 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ─── AUTH BAR ────────────────────────────────────────────────────────── */
+.auth-bar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  padding: 1rem 1.5rem;
+  z-index: 100;
+}
+.auth-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .85rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  padding: .5rem 1rem;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.auth-btn:hover { border-color: var(--orange); color: var(--orange); }
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border2);
+}
+.user-name {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-right: .5rem;
+}
+.logout-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: .8rem;
+  font-weight: 600;
+  padding: .35rem .7rem;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.logout-btn:hover { border-color: var(--orange); color: var(--orange); }
+
 /* ─── VIEWS ──────────────────────────────────────────────────────────── */
 .view { display: none; }
 .view.active { display: block; }
@@ -683,6 +737,18 @@ body {
 </style>
 </head>
 <body>
+
+<!-- ═══ AUTH BAR ════════════════════════════════════════════════════════ -->
+<div class="auth-bar" id="auth-bar">
+  <div id="auth-logged-out" style="display:none">
+    <a href="/auth/login" class="auth-btn">ВХІД ЧЕРЕЗ FACEIT</a>
+  </div>
+  <div id="auth-logged-in" class="user-menu" style="display:none">
+    <img id="user-avatar" class="user-avatar" src="" alt="">
+    <span id="user-name" class="user-name"></span>
+    <button id="logout-btn" class="logout-btn">ВИХІД</button>
+  </div>
+</div>
 
 <!-- ═══ INPUT VIEW ══════════════════════════════════════════════════════ -->
 <div id="input-view" class="view active">
@@ -1374,6 +1440,35 @@ document.getElementById('back-btn').addEventListener('click', () => {
     loadMatch(r);
   }
 })();
+
+// ── Auth check ─────────────────────────────────────────────────────────
+(async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/me');
+    const data = await res.json();
+    
+    if (data.authenticated) {
+      document.getElementById('auth-logged-in').style.display = 'flex';
+      document.getElementById('auth-logged-out').style.display = 'none';
+      document.getElementById('user-name').textContent = data.nickname;
+      if (data.avatar) {
+        document.getElementById('user-avatar').src = data.avatar;
+        document.getElementById('user-avatar').style.display = 'block';
+      } else {
+        document.getElementById('user-avatar').style.display = 'none';
+      }
+    } else {
+      document.getElementById('auth-logged-in').style.display = 'none';
+      document.getElementById('auth-logged-out').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('auth-logged-out').style.display = 'block';
+  }
+})();
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  window.location.href = '/auth/logout';
+});
 </script>
 </body>
 </html>

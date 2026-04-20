@@ -6,12 +6,15 @@ import json
 import logging
 import os
 import re
+import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
 import aiohttp
 import asyncpg
-from fastapi import FastAPI, HTTPException, Cookie, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+import jwt
+from fastapi import FastAPI, HTTPException, Cookie, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -25,6 +28,14 @@ STEAM64_BASE = 76561197960265728
 DATABASE_URL = os.environ.get("DATABASE_URL")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "5540")
 ADMIN_TOKEN = "faceit_admin_ok"
+
+# OAuth config
+FACEIT_CLIENT_ID = os.environ.get("FACEIT_CLIENT_ID", "")
+FACEIT_CLIENT_SECRET = os.environ.get("FACEIT_CLIENT_SECRET", "")
+FACEIT_REDIRECT_URI = os.environ.get("FACEIT_REDIRECT_URI", "http://localhost:8000/auth/callback")
+JWT_SECRET = os.environ.get("JWT_SECRET", secrets.token_urlsafe(32))
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_DAYS = 30
 
 _pool: asyncpg.Pool | None = None
 
@@ -749,6 +760,165 @@ button:hover{filter:brightness(1.08)}
 
 def _is_admin(admin_session: str | None) -> bool:
     return admin_session == ADMIN_TOKEN
+
+
+# ── OAuth helpers ──────────────────────────────────────────────────────────
+def create_jwt_token(faceit_user: dict) -> str:
+    """Create JWT token with user data."""
+    payload = {
+        "faceit_id": faceit_user["player_id"],
+        "nickname": faceit_user["nickname"],
+        "avatar": faceit_user.get("avatar"),
+        "exp": datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_jwt_token(token: str) -> dict | None:
+    """Verify JWT and return payload, or None if invalid."""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+
+def get_current_user(request: Request) -> dict | None:
+    """Extract user from JWT cookie."""
+    token = request.cookies.get("faceit_token")
+    if not token:
+        return None
+    return verify_jwt_token(token)
+
+
+async def save_user_to_db(faceit_id: str, nickname: str, avatar: str | None):
+    """Save or update user in database."""
+    if not _pool:
+        return
+    try:
+        await _pool.execute(
+            """
+            INSERT INTO users (faceit_id, nickname, avatar, last_login)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (faceit_id)
+            DO UPDATE SET
+                nickname = EXCLUDED.nickname,
+                avatar = EXCLUDED.avatar,
+                last_login = NOW()
+            """,
+            faceit_id,
+            nickname,
+            avatar,
+        )
+    except Exception as e:
+        log.error("Failed to save user to DB: %s", e)
+
+
+# ── OAuth endpoints ────────────────────────────────────────────────────────
+@app.get("/auth/login")
+async def auth_login():
+    """Redirect to Faceit OAuth."""
+    if not FACEIT_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="OAuth not configured")
+    auth_url = (
+        f"https://accounts.faceit.com/oauth/authorize"
+        f"?client_id={FACEIT_CLIENT_ID}"
+        f"&redirect_uri={FACEIT_REDIRECT_URI}"
+        f"&response_type=code"
+        f"&scope=openid email profile"
+    )
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/callback")
+async def auth_callback(code: str | None = None, error: str | None = None):
+    """Handle Faceit OAuth callback."""
+    if error or not code:
+        return RedirectResponse("/?auth_error=1")
+    
+    if not FACEIT_CLIENT_ID or not FACEIT_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="OAuth not configured")
+    
+    # Exchange code for token
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(
+                "https://accounts.faceit.com/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": FACEIT_REDIRECT_URI,
+                    "client_id": FACEIT_CLIENT_ID,
+                    "client_secret": FACEIT_CLIENT_SECRET,
+                },
+            ) as resp:
+                if resp.status != 200:
+                    log.error("OAuth token exchange failed: %s", await resp.text())
+                    return RedirectResponse("/?auth_error=2")
+                token_data = await resp.json()
+                access_token = token_data.get("access_token")
+            
+            if not access_token:
+                return RedirectResponse("/?auth_error=3")
+            
+            # Get user info
+            async with session.get(
+                "https://api.faceit.com/auth/v1/resources/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            ) as resp:
+                if resp.status != 200:
+                    log.error("OAuth userinfo failed: %s", await resp.text())
+                    return RedirectResponse("/?auth_error=4")
+                user_data = await resp.json()
+            
+            # Save user to database
+            await save_user_to_db(
+                user_data["player_id"],
+                user_data["nickname"],
+                user_data.get("avatar"),
+            )
+            
+            # Create JWT
+            jwt_token = create_jwt_token(user_data)
+            
+            # Redirect with cookie
+            response = RedirectResponse("/", status_code=303)
+            response.set_cookie(
+                "faceit_token",
+                jwt_token,
+                httponly=True,
+                samesite="lax",
+                max_age=60 * 60 * 24 * JWT_EXPIRE_DAYS,
+            )
+            return response
+            
+        except Exception as e:
+            log.error("OAuth error: %s", e)
+            return RedirectResponse("/?auth_error=5")
+
+
+@app.get("/auth/logout")
+async def auth_logout():
+    """Logout user."""
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie("faceit_token")
+    return response
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    """Get current user info."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"authenticated": False}, status_code=200)
+    return JSONResponse({
+        "authenticated": True,
+        "faceit_id": user["faceit_id"],
+        "nickname": user["nickname"],
+        "avatar": user.get("avatar"),
+    })
 
 
 @app.get("/admin")
