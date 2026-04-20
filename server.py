@@ -869,6 +869,7 @@ async def auth_login():
     state = secrets.token_urlsafe(16)
 
     params = urlencode({
+        "redirect_popup": "false",
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
