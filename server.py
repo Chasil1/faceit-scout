@@ -11,7 +11,7 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 import aiohttp
 import asyncpg
@@ -866,19 +866,20 @@ async def auth_login():
         raise HTTPException(status_code=500, detail="OAuth not configured")
 
     verifier, challenge = _generate_pkce_pair()
+    state = secrets.token_urlsafe(16)
 
     params = urlencode({
-        "redirect_popup": "false",
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
         "scope": "openid profile email",
+        "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
-    })
+    }, quote_via=quote)
 
     pkce_token = jwt.encode(
-        {"v": verifier, "exp": datetime.utcnow() + timedelta(minutes=10)},
+        {"v": verifier, "s": state, "exp": datetime.utcnow() + timedelta(minutes=10)},
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )
@@ -898,6 +899,7 @@ async def auth_login():
 async def auth_callback(
     code: str | None = None,
     error: str | None = None,
+    state: str | None = None,
     oauth_pkce: str | None = Cookie(default=None),
 ):
     """Handle Faceit OAuth callback with PKCE verifier."""
@@ -915,6 +917,10 @@ async def auth_callback(
         try:
             payload = jwt.decode(oauth_pkce, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             verifier = payload.get("v")
+            expected_state = payload.get("s")
+            if expected_state and state != expected_state:
+                log.error("State mismatch: expected %s got %s", expected_state, state)
+                return RedirectResponse("/?auth_error=7")
         except jwt.InvalidTokenError as e:
             log.error("Invalid PKCE cookie: %s", e)
 
