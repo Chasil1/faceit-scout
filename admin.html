@@ -688,7 +688,13 @@ function renderReports() {
       <div class="report-card ${r.reviewed ? 'reviewed' : ''}" data-id="${r.id}" data-acc="${r.account_id}">
         <div class="rc-info">
           <div class="rc-nick">${esc(r.nickname || '(без імені)')}</div>
-          <div class="rc-meta">account_id: ${r.account_id} · ${fmtTime(r.created_at)}</div>
+          <div class="rc-meta">
+            <a href="https://steamcommunity.com/profiles/${r.account_id + 76561197960265728}"
+               target="_blank" rel="noopener"
+               style="color:var(--orange);text-decoration:none">Steam #${r.account_id}</a>
+            · ${fmtTime(r.created_at)}
+          </div>
+          ${r.discord ? `<div class="rc-meta" style="margin-top:.2rem">Discord: <span style="color:var(--text)">${esc(r.discord)}</span></div>` : ''}
           ${matchLink ? `<div class="rc-meta" style="margin-top:.2rem">Матч: ${matchLink}</div>` : ''}
           <div class="rc-rank">Заявлений ранг: ${rankHtml}</div>
         </div>

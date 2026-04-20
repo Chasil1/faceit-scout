@@ -555,6 +555,7 @@ class ReportCreate(BaseModel):
     real_rank_tier: int | None = None
     real_leaderboard_rank: int | None = None
     match_room_id: str | None = None
+    discord: str | None = None
 
 
 @app.post("/api/report")
@@ -563,8 +564,8 @@ async def submit_report(body: ReportCreate):
         raise HTTPException(status_code=503, detail="db unavailable")
     row = await _pool.fetchrow(
         """
-        INSERT INTO smurf_reports (account_id, nickname, real_rank_tier, real_leaderboard_rank, match_room_id)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO smurf_reports (account_id, nickname, real_rank_tier, real_leaderboard_rank, match_room_id, discord)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         """,
         body.account_id,
@@ -572,6 +573,7 @@ async def submit_report(body: ReportCreate):
         body.real_rank_tier,
         body.real_leaderboard_rank,
         body.match_room_id,
+        body.discord,
     )
     return {"ok": True, "report_id": row["id"]}
 
@@ -583,7 +585,7 @@ async def admin_list_reports():
     rows = await _pool.fetch(
         """
         SELECT id, account_id, nickname, real_rank_tier, real_leaderboard_rank,
-               match_room_id, created_at, reviewed, action_taken
+               match_room_id, created_at, reviewed, action_taken, discord
         FROM smurf_reports
         ORDER BY reviewed ASC, created_at DESC
         LIMIT 200
@@ -606,6 +608,7 @@ async def admin_list_reports():
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "reviewed": r["reviewed"],
             "action_taken": r["action_taken"],
+            "discord": r["discord"],
         })
     return {"reports": out}
 

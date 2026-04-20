@@ -772,6 +772,11 @@ body {
       </div>
     </div>
 
+    <div class="modal-section">
+      <div class="modal-label">Discord <span class="optional">(необов'язково)</span></div>
+      <input class="modal-input" id="report-discord" type="text" placeholder="напр. username або username#1234">
+    </div>
+
     <div id="report-feedback" class="report-feedback hidden"></div>
 
     <div class="modal-actions">
@@ -1084,6 +1089,7 @@ function reportBuildPlayerList() {
 function openReportModal() {
   reportState = { player: null, tier: null, star: null };
   document.getElementById('report-feedback').className = 'report-feedback hidden';
+  document.getElementById('report-discord').value = '';
   document.getElementById('report-tier-grid').querySelectorAll('.tier-btn-sm').forEach(x => x.classList.remove('active'));
   document.getElementById('report-stars').querySelectorAll('.star-btn-sm').forEach(x => x.classList.remove('active'));
   document.getElementById('report-star-wrap').classList.add('hidden');
@@ -1123,6 +1129,7 @@ async function submitReport() {
         real_rank_tier,
         real_leaderboard_rank,
         match_room_id: reportRoomId,
+        discord: document.getElementById('report-discord').value.trim() || null,
       }),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
