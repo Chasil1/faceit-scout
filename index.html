@@ -1262,6 +1262,34 @@ async function loadMatch(roomId) {
       }
     }
 
+    // Refresh smurf status before rendering
+    const allPlayers = [
+      ...(data.team1?.players || []),
+      ...(data.team2?.players || []),
+    ];
+    const accIds = allPlayers.map(p => p.account_id).filter(Boolean).join(',');
+    if (accIds) {
+      try {
+        const r = await fetch(`/api/smurfs?ids=${accIds}`);
+        const { smurfs } = await r.json();
+        if (smurfs && Object.keys(smurfs).length) {
+          for (const p of allPlayers) {
+            const s = smurfs[String(p.account_id)];
+            if (s) {
+              p.is_smurf = true;
+              p.real_rank_major = s.real_rank_major;
+              p.real_rank = s.real_rank;
+            } else {
+              p.is_smurf = false;
+              p.real_rank_major = 0;
+              p.real_rank = null;
+            }
+            if (p.player_id) playerCache[p.player_id] = p;
+          }
+        }
+      } catch (_) {}
+    }
+
     saveSession(roomId, data);
     renderMatch(data);
     showView('match-view');
