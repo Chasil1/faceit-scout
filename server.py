@@ -549,6 +549,49 @@ async def poll_match(room_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/admin/backfill")
+async def admin_backfill():
+    """Fetch Faceit data for cached players that are missing nicknames."""
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    rows = await _pool.fetch(
+        "SELECT account_id FROM opendota_cache WHERE nickname IS NULL LIMIT 200"
+    )
+    if not rows:
+        return {"updated": 0}
+
+    updated = 0
+    async with aiohttp.ClientSession() as session:
+        for row in rows:
+            account_id = row["account_id"]
+            steam64 = account_id + STEAM64_BASE
+            try:
+                data = await faceit_get(session, f"/players?game=dota2&game_player_id={steam64}")
+                pid = data.get("player_id", "")
+                nickname = data.get("nickname") or None
+                avatar = data.get("avatar") or None
+                dota = (data.get("games") or {}).get("dota2") or {}
+                faceit_level = dota.get("skill_level") or None
+                faceit_elo = dota.get("faceit_elo") or None
+                await _pool.execute(
+                    """
+                    UPDATE opendota_cache
+                    SET nickname         = $2,
+                        avatar           = $3,
+                        faceit_player_id = $4,
+                        faceit_level     = $5,
+                        faceit_elo       = $6
+                    WHERE account_id = $1
+                    """,
+                    account_id, nickname, avatar, pid, faceit_level, faceit_elo,
+                )
+                updated += 1
+            except Exception as e:
+                log.warning("backfill skip %s: %s", account_id, e)
+
+    return {"updated": updated}
+
+
 @app.get("/admin")
 async def admin_page():
     path = os.path.join(BASE_PATH, "admin.html")

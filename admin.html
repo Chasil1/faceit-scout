@@ -565,7 +565,16 @@ document.getElementById('rank-modal').onclick = (e) => { if (e.target.id === 'ra
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
 buildModalControls();
-load();
+load().then(() => {
+  // Silently backfill nicknames for rows missing them
+  const missing = players.some(p => !p.nickname);
+  if (missing) {
+    fetch('/api/admin/backfill', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.updated > 0) load(); })
+      .catch(() => {});
+  }
+});
 </script>
 </body>
 </html>
