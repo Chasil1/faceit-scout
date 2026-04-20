@@ -829,7 +829,7 @@ async def auth_login():
         "redirect_uri": FACEIT_REDIRECT_URI,
         "scope": "openid profile email",
     })
-    return RedirectResponse(f"https://auth.faceit.com/v1/authorize?{params}")
+    return RedirectResponse(f"https://accounts.faceit.com/?{params}")
 
 
 @app.get("/auth/callback")
