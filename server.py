@@ -10,8 +10,8 @@ from contextlib import asynccontextmanager
 
 import aiohttp
 import asyncpg
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Cookie, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -23,6 +23,8 @@ FACEIT_BASE = "https://open.faceit.com/data/v4"
 OPENDOTA_BASE = "https://api.opendota.com/api"
 STEAM64_BASE = 76561197960265728
 DATABASE_URL = os.environ.get("DATABASE_URL")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "5540")
+ADMIN_TOKEN = "faceit_admin_ok"
 
 _pool: asyncpg.Pool | None = None
 
@@ -579,7 +581,9 @@ async def submit_report(body: ReportCreate):
 
 
 @app.get("/api/admin/reports")
-async def admin_list_reports():
+async def admin_list_reports(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
     rows = await _pool.fetch(
@@ -614,7 +618,9 @@ async def admin_list_reports():
 
 
 @app.post("/api/admin/reports/{report_id}/review")
-async def admin_review_report(report_id: int, action: str = "dismiss"):
+async def admin_review_report(report_id: int, action: str = "dismiss", admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
     res = await _pool.execute(
@@ -661,8 +667,10 @@ async def get_smurfs(ids: str = ""):
 
 
 @app.post("/api/admin/backfill")
-async def admin_backfill():
+async def admin_backfill(admin_session: str | None = Cookie(default=None)):
     """Fetch Faceit data for cached players that are missing nicknames."""
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
     rows = await _pool.fetch(
@@ -703,15 +711,69 @@ async def admin_backfill():
     return {"updated": updated}
 
 
+_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin · Вхід</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;color:#f0f0f0;font-family:'Rajdhani',sans-serif;
+  display:flex;align-items:center;justify-content:center;min-height:100vh}
+.box{background:#181818;border:1px solid #2a2a2a;padding:2rem 2.5rem;width:320px}
+h1{font-size:1.1rem;letter-spacing:.2em;text-transform:uppercase;color:#FF5500;margin-bottom:1.5rem}
+input{width:100%;background:#202020;border:1px solid #2a2a2a;color:#f0f0f0;
+  padding:.65rem .9rem;font-family:inherit;font-size:1rem;margin-bottom:.8rem;outline:none}
+input:focus{border-color:#FF5500}
+button{width:100%;background:#FF5500;border:none;color:#111;
+  padding:.65rem;font-family:inherit;font-size:.9rem;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+.err{color:#ff3b3b;font-size:.82rem;margin-bottom:.7rem}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Admin · Вхід</h1>
+  {error}
+  <form method="post" action="/admin/login">
+    <input type="password" name="password" placeholder="Пароль" autofocus autocomplete="current-password">
+    <button type="submit">Увійти</button>
+  </form>
+</div>
+</body>
+</html>"""
+
+
+def _is_admin(admin_session: str | None) -> bool:
+    return admin_session == ADMIN_TOKEN
+
+
 @app.get("/admin")
-async def admin_page():
+async def admin_page(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        return HTMLResponse(_LOGIN_HTML.replace("{error}", ""), status_code=200)
     path = os.path.join(BASE_PATH, "admin.html")
     with open(path, encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 
+@app.post("/admin/login")
+async def admin_login(password: str = Form(...)):
+    if password == ADMIN_PASSWORD:
+        resp = RedirectResponse(url="/admin", status_code=303)
+        resp.set_cookie("admin_session", ADMIN_TOKEN, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+        return resp
+    html = _LOGIN_HTML.replace("{error}", '<p class="err">Невірний пароль</p>')
+    return HTMLResponse(html, status_code=200)
+
+
 @app.get("/api/admin/players")
-async def admin_list_players():
+async def admin_list_players(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
     rows = await _pool.fetch(
@@ -760,7 +822,9 @@ class SmurfUpdate(BaseModel):
 
 
 @app.post("/api/admin/smurf/{account_id}")
-async def admin_set_smurf(account_id: int, body: SmurfUpdate):
+async def admin_set_smurf(account_id: int, body: SmurfUpdate, admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
     if body.is_smurf and body.real_rank_tier is None:
