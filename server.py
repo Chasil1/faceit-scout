@@ -794,27 +794,59 @@ def get_current_user(request: Request) -> dict | None:
     return verify_jwt_token(token)
 
 
-async def save_user_to_db(faceit_id: str, nickname: str, avatar: str | None):
+async def save_user_to_db(
+    faceit_id: str,
+    nickname: str,
+    avatar: str | None,
+    dota_account_id: int | None = None,
+):
     """Save or update user in database."""
     if not _pool:
         return
     try:
         await _pool.execute(
             """
-            INSERT INTO users (faceit_id, nickname, avatar, last_login)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO users (faceit_id, nickname, avatar, dota_account_id, last_login)
+            VALUES ($1, $2, $3, $4, NOW())
             ON CONFLICT (faceit_id)
             DO UPDATE SET
                 nickname = EXCLUDED.nickname,
                 avatar = EXCLUDED.avatar,
+                dota_account_id = COALESCE(EXCLUDED.dota_account_id, users.dota_account_id),
                 last_login = NOW()
             """,
             faceit_id,
             nickname,
             avatar,
+            dota_account_id,
         )
     except Exception as e:
         log.error("Failed to save user to DB: %s", e)
+
+
+async def get_user_dota_account_id(faceit_id: str) -> int | None:
+    if not _pool:
+        return None
+    try:
+        row = await _pool.fetchrow(
+            "SELECT dota_account_id FROM users WHERE faceit_id = $1",
+            faceit_id,
+        )
+        return row["dota_account_id"] if row else None
+    except Exception as e:
+        log.error("Failed to fetch user dota_account_id: %s", e)
+        return None
+
+
+async def fetch_faceit_dota_account_id(session: aiohttp.ClientSession, player_id: str) -> int | None:
+    """Call Faceit Data API to get the user's dota2 steam account_id (steam32)."""
+    try:
+        data = await faceit_get(session, f"/players/{player_id}")
+        dota = (data.get("games") or {}).get("dota2") or {}
+        return to_account_id(dota.get("game_player_id"))
+    except Exception as e:
+        log.warning("Could not fetch dota2 game_player_id for %s: %s", player_id, e)
+        return None
 
 
 # ── OAuth endpoints ────────────────────────────────────────────────────────
@@ -876,13 +908,19 @@ async def auth_callback(code: str | None = None, error: str | None = None):
                     return RedirectResponse("/?auth_error=4")
                 user_data = await resp.json()
             
+            # Fetch Dota2 account_id from Faceit Data API (for self-review blocking)
+            dota_account_id = await fetch_faceit_dota_account_id(
+                session, user_data["player_id"]
+            )
+
             # Save user to database
             await save_user_to_db(
                 user_data["player_id"],
                 user_data["nickname"],
                 user_data.get("avatar"),
+                dota_account_id,
             )
-            
+
             # Create JWT
             jwt_token = create_jwt_token(user_data)
             
@@ -916,12 +954,151 @@ async def auth_me(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"authenticated": False}, status_code=200)
+    dota_account_id = await get_user_dota_account_id(user["faceit_id"])
     return JSONResponse({
         "authenticated": True,
         "faceit_id": user["faceit_id"],
         "nickname": user["nickname"],
         "avatar": user.get("avatar"),
+        "dota_account_id": dota_account_id,
     })
+
+
+class ReviewCreate(BaseModel):
+    rating: int
+
+
+def _compute_decency(likes: int, dislikes: int) -> float:
+    if likes == 0 and dislikes == 0:
+        return 50.0
+    return round(likes / (likes + dislikes) * 100, 1)
+
+
+@app.get("/api/profile/{account_id}")
+async def get_profile(account_id: int, request: Request):
+    if not _pool:
+        raise HTTPException(status_code=503, detail="DB not available")
+
+    cache_row = await _pool.fetchrow(
+        """
+        SELECT account_id, nickname, avatar, rank_tier, leaderboard_rank,
+               faceit_player_id, faceit_level, faceit_elo,
+               is_smurf, real_rank_tier, real_leaderboard_rank
+        FROM opendota_cache
+        WHERE account_id = $1
+        """,
+        account_id,
+    )
+
+    reviews_rows = await _pool.fetch(
+        """
+        SELECT r.rating, r.updated_at, u.faceit_id, u.nickname, u.avatar
+        FROM player_reviews r
+        LEFT JOIN users u ON u.faceit_id = r.reviewer_faceit_id
+        WHERE r.target_account_id = $1
+        ORDER BY r.updated_at DESC
+        """,
+        account_id,
+    )
+
+    likes = sum(1 for r in reviews_rows if r["rating"] == 1)
+    dislikes = sum(1 for r in reviews_rows if r["rating"] == -1)
+
+    reviews = [
+        {
+            "faceit_id": r["faceit_id"],
+            "nickname": r["nickname"] or "Unknown",
+            "avatar": r["avatar"],
+            "rating": r["rating"],
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+        }
+        for r in reviews_rows
+    ]
+
+    viewer = get_current_user(request)
+    my_review = None
+    viewer_dota_id = None
+    if viewer:
+        viewer_dota_id = await get_user_dota_account_id(viewer["faceit_id"])
+        for r in reviews_rows:
+            if r["faceit_id"] == viewer["faceit_id"]:
+                my_review = r["rating"]
+                break
+
+    rank_major, rank_label = (
+        rank_label(cache_row["rank_tier"], cache_row["leaderboard_rank"])
+        if cache_row and cache_row["rank_tier"]
+        else (0, "Unranked")
+    )
+    real_major, real_label = (
+        rank_label(cache_row["real_rank_tier"], cache_row["real_leaderboard_rank"])
+        if cache_row and cache_row["is_smurf"] and cache_row["real_rank_tier"]
+        else (None, None)
+    )
+
+    return JSONResponse({
+        "account_id": account_id,
+        "nickname": cache_row["nickname"] if cache_row else None,
+        "avatar": cache_row["avatar"] if cache_row else None,
+        "faceit_player_id": cache_row["faceit_player_id"] if cache_row else None,
+        "faceit_level": cache_row["faceit_level"] if cache_row else None,
+        "faceit_elo": cache_row["faceit_elo"] if cache_row else None,
+        "dota_rank": rank_label,
+        "dota_rank_major": rank_major,
+        "is_smurf": bool(cache_row["is_smurf"]) if cache_row else False,
+        "real_rank": real_label,
+        "real_rank_major": real_major,
+        "decency_pct": _compute_decency(likes, dislikes),
+        "likes": likes,
+        "dislikes": dislikes,
+        "reviews": reviews,
+        "my_review": my_review,
+        "can_review": bool(viewer) and viewer_dota_id != account_id,
+        "is_self": viewer_dota_id == account_id if viewer else False,
+    })
+
+
+@app.post("/api/profile/{account_id}/review")
+async def post_review(account_id: int, body: ReviewCreate, request: Request):
+    viewer = get_current_user(request)
+    if not viewer:
+        raise HTTPException(status_code=401, detail="Login required")
+    if body.rating not in (1, -1):
+        raise HTTPException(status_code=400, detail="rating must be 1 or -1")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="DB not available")
+
+    viewer_dota_id = await get_user_dota_account_id(viewer["faceit_id"])
+    if viewer_dota_id == account_id:
+        raise HTTPException(status_code=400, detail="Cannot review yourself")
+
+    await _pool.execute(
+        """
+        INSERT INTO player_reviews (reviewer_faceit_id, target_account_id, rating, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (reviewer_faceit_id, target_account_id)
+        DO UPDATE SET rating = EXCLUDED.rating, updated_at = NOW()
+        """,
+        viewer["faceit_id"],
+        account_id,
+        body.rating,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/profile/{account_id}/review")
+async def delete_review(account_id: int, request: Request):
+    viewer = get_current_user(request)
+    if not viewer:
+        raise HTTPException(status_code=401, detail="Login required")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="DB not available")
+    await _pool.execute(
+        "DELETE FROM player_reviews WHERE reviewer_faceit_id = $1 AND target_account_id = $2",
+        viewer["faceit_id"],
+        account_id,
+    )
+    return {"ok": True}
 
 
 @app.get("/admin")

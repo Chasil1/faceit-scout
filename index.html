@@ -688,6 +688,97 @@ body {
 .report-feedback.ok { background: rgba(50,200,80,.15); border: 1px solid #32c850; color: #32c850; }
 .report-feedback.err { background: rgba(255,59,59,.12); border: 1px solid #ff3b3b; color: #ff3b3b; }
 .hidden { display: none !important; }
+
+/* Profile modal */
+.profile-box { max-width: 520px; }
+.profile-loading { text-align: center; color: var(--dim); padding: 2rem 0; }
+.profile-head {
+  display: flex; gap: 1rem; align-items: center;
+  padding-bottom: 1rem; border-bottom: 1px solid #252525;
+}
+.profile-avatar {
+  width: 64px; height: 64px; object-fit: cover;
+  border: 1px solid #333; background: #202020;
+}
+.profile-head-info { flex: 1; min-width: 0; }
+.profile-nick { font-size: 1.15rem; font-weight: 700; letter-spacing: .03em; }
+.profile-sub { color: var(--dim); font-size: .78rem; margin-top: .2rem; }
+.profile-sub a { color: var(--orange); text-decoration: none; }
+.profile-sub a:hover { text-decoration: underline; }
+.profile-head-stats { display: flex; gap: .5rem; align-items: center; }
+
+.profile-section {
+  padding: 1rem 0;
+  border-bottom: 1px solid #252525;
+  display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+}
+.profile-section:last-child { border-bottom: none; }
+.profile-label {
+  font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dim); margin-bottom: .4rem;
+}
+
+.decency-wrap { flex: 1; min-width: 180px; }
+.decency-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: .4rem;
+}
+.decency-pct { font-size: 1.35rem; font-weight: 700; letter-spacing: .04em; }
+.decency-counts { font-size: .78rem; color: var(--dim); }
+.decency-bar {
+  height: 8px; background: #252525; border: 1px solid #303030;
+  overflow: hidden; position: relative;
+}
+.decency-fill {
+  position: absolute; inset: 0 auto 0 0;
+  transition: width .4s ease, background .3s ease;
+}
+.decency-fill.low  { background: linear-gradient(90deg, #e23a3a, #ff5a5a); }
+.decency-fill.mid  { background: linear-gradient(90deg, #d0a52e, #ffd04a); }
+.decency-fill.high { background: linear-gradient(90deg, #2fa74a, #55d47a); }
+
+.review-btns { display: flex; gap: .5rem; }
+.review-btn {
+  background: #202020; border: 1px solid #333; color: #ccc;
+  font-size: .85rem; font-weight: 600; letter-spacing: .06em;
+  padding: .55rem .9rem; cursor: pointer; transition: all .15s ease;
+  display: flex; align-items: center; gap: .4rem;
+}
+.review-btn:hover:not(:disabled) { border-color: #555; color: #fff; }
+.review-btn:disabled { cursor: not-allowed; opacity: .45; }
+.review-btn.active.like  { background: rgba(50,200,80,.2); border-color: #32c850; color: #32c850; }
+.review-btn.active.dislike { background: rgba(255,59,59,.2); border-color: #ff3b3b; color: #ff3b3b; }
+.review-btn .thumb { font-size: 1.1rem; line-height: 1; }
+
+.review-note {
+  font-size: .72rem; color: var(--dim); margin-top: .5rem; width: 100%;
+}
+
+.review-list {
+  max-height: 260px; overflow-y: auto;
+  padding-right: .3rem;
+}
+.review-item {
+  display: flex; gap: .6rem; align-items: center;
+  padding: .55rem 0; border-bottom: 1px solid #1e1e1e;
+}
+.review-item:last-child { border-bottom: none; }
+.review-avatar {
+  width: 28px; height: 28px; object-fit: cover;
+  border: 1px solid #2a2a2a; background: #202020; flex-shrink: 0;
+}
+.review-nick { font-size: .85rem; font-weight: 600; flex: 1; min-width: 0; }
+.review-date { font-size: .7rem; color: var(--dim); }
+.review-thumb {
+  font-size: 1rem; width: 24px; text-align: center;
+}
+.review-thumb.up { color: #32c850; }
+.review-thumb.down { color: #ff3b3b; }
+
+.review-empty { color: var(--dim); font-size: .8rem; text-align: center; padding: .8rem 0; }
+
+.player-card { cursor: pointer; }
+
 .rank-lb-overlay {
   position: absolute;
   bottom: 2px;
@@ -809,6 +900,19 @@ body {
 
   <div class="report-bar" id="report-bar" style="display:none">
     <button class="report-smurf-btn" id="report-smurf-btn">⚑ Репорт смурфа</button>
+  </div>
+</div>
+
+<!-- Profile Modal -->
+<div class="modal-overlay" id="profile-modal" style="display:none">
+  <div class="modal-box profile-box">
+    <div class="modal-header">
+      <span class="modal-title">Профіль гравця</span>
+      <button class="modal-close" id="profile-close">✕</button>
+    </div>
+    <div id="profile-body" class="profile-body">
+      <div class="profile-loading">Завантаження…</div>
+    </div>
   </div>
 </div>
 
@@ -1005,12 +1109,14 @@ function renderPlayer(p, delay, isCaptain = false) {
   const pos   = posLabel(p.position);
   const elo   = p.faceit_elo ? `<div class="elo-num">${esc(p.faceit_elo)}</div><div class="elo-lbl">ELO</div>` : '';
   const lvl   = p.faceit_level || 0;
-  const link  = p.opendota_link || '#';
+  const link  = p.opendota_link || '';
   const crown = isCaptain ? `<span class="captain-badge">♛ КАП</span>` : '';
+  const acc   = p.account_id != null ? p.account_id : '';
 
   return `
-    <a class="player-card" href="${esc(link)}" target="_blank" rel="noopener"
-       style="animation-delay:${delay}ms">
+    <div class="player-card" data-account-id="${esc(acc)}" data-opendota="${esc(link)}"
+         data-nickname="${esc(p.nickname)}"
+         style="animation-delay:${delay}ms">
       ${avatar}
       <div class="p-info">
         <div class="p-name">${esc(p.nickname)}${crown}</div>
@@ -1025,7 +1131,7 @@ function renderPlayer(p, delay, isCaptain = false) {
         ${rankIcon(p.dota_rank_major, p.dota_rank)}
         <div class="lvl-badge ${lvlClass(lvl)}">${lvl || '?'}</div>
       </div>
-    </a>`;
+    </div>`;
 }
 
 function renderMatch(data) {
@@ -1442,12 +1548,15 @@ document.getElementById('back-btn').addEventListener('click', () => {
 })();
 
 // ── Auth check ─────────────────────────────────────────────────────────
-(async function checkAuth() {
+let currentUser = null;
+
+async function checkAuth() {
   try {
     const res = await fetch('/api/auth/me');
     const data = await res.json();
-    
+
     if (data.authenticated) {
+      currentUser = data;
       document.getElementById('auth-logged-in').style.display = 'flex';
       document.getElementById('auth-logged-out').style.display = 'none';
       document.getElementById('user-name').textContent = data.nickname;
@@ -1458,16 +1567,210 @@ document.getElementById('back-btn').addEventListener('click', () => {
         document.getElementById('user-avatar').style.display = 'none';
       }
     } else {
+      currentUser = null;
       document.getElementById('auth-logged-in').style.display = 'none';
       document.getElementById('auth-logged-out').style.display = 'block';
     }
   } catch (e) {
+    currentUser = null;
     document.getElementById('auth-logged-out').style.display = 'block';
   }
-})();
+}
+checkAuth();
 
 document.getElementById('logout-btn').addEventListener('click', () => {
   window.location.href = '/auth/logout';
+});
+
+// ── Profile modal ──────────────────────────────────────────────────────
+let currentProfileAccount = null;
+
+function decencyClass(pct) {
+  if (pct >= 70) return 'high';
+  if (pct >= 40) return 'mid';
+  return 'low';
+}
+
+function formatReviewDate(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch (e) { return ''; }
+}
+
+async function openProfileModal(accountId, opendotaLink, nickname) {
+  if (!accountId) return;
+  currentProfileAccount = accountId;
+  const modal = document.getElementById('profile-modal');
+  const body = document.getElementById('profile-body');
+  body.innerHTML = '<div class="profile-loading">Завантаження…</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/profile/${accountId}`);
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+    data._opendota_link = opendotaLink || `https://www.opendota.com/players/${accountId}`;
+    data._fallback_nickname = nickname;
+    renderProfile(data);
+  } catch (e) {
+    body.innerHTML = '<div class="profile-loading">Не вдалося завантажити профіль.</div>';
+  }
+}
+
+function closeProfileModal() {
+  document.getElementById('profile-modal').style.display = 'none';
+  currentProfileAccount = null;
+}
+
+function renderProfile(d) {
+  const nick = d.nickname || d._fallback_nickname || `#${d.account_id}`;
+  const avatar = d.avatar
+    ? `<img class="profile-avatar" src="${esc(d.avatar)}" alt="" onerror="this.style.display='none'">`
+    : `<div class="profile-avatar"></div>`;
+  const lvl = d.faceit_level || 0;
+  const smurfMark = d.is_smurf
+    ? `<div class="smurf-real" style="position:relative;width:38px;height:38px" title="Справжній ранг: ${esc(d.real_rank || '?')}">${rankIcon(d.real_rank_major, d.real_rank)}</div>`
+    : '';
+
+  const dcClass = decencyClass(d.decency_pct);
+  const decencyHtml = `
+    <div class="decency-wrap">
+      <div class="profile-label">Рейтинг порядочності</div>
+      <div class="decency-head">
+        <div class="decency-pct">${d.decency_pct}%</div>
+        <div class="decency-counts">👍 ${d.likes} · 👎 ${d.dislikes}</div>
+      </div>
+      <div class="decency-bar"><div class="decency-fill ${dcClass}" style="width:${d.decency_pct}%"></div></div>
+    </div>`;
+
+  let btnsHtml;
+  if (d.is_self) {
+    btnsHtml = `<div class="review-note">Це твій акаунт — оцінити себе не можна.</div>`;
+  } else if (!currentUser) {
+    btnsHtml = `
+      <div class="review-btns">
+        <button class="review-btn" disabled><span class="thumb">👍</span>Лайк</button>
+        <button class="review-btn" disabled><span class="thumb">👎</span>Дизлайк</button>
+      </div>
+      <div class="review-note">Увійди через Faceit щоб оцінити цього гравця.</div>`;
+  } else {
+    const likeActive = d.my_review === 1 ? 'active like' : '';
+    const dislikeActive = d.my_review === -1 ? 'active dislike' : '';
+    const removeBtn = d.my_review != null
+      ? `<button class="review-btn" onclick="removeMyReview()">Прибрати оцінку</button>`
+      : '';
+    btnsHtml = `
+      <div class="review-btns">
+        <button class="review-btn ${likeActive}" onclick="submitReview(1)"><span class="thumb">👍</span>Лайк</button>
+        <button class="review-btn ${dislikeActive}" onclick="submitReview(-1)"><span class="thumb">👎</span>Дизлайк</button>
+        ${removeBtn}
+      </div>`;
+  }
+
+  const reviewsHtml = d.reviews && d.reviews.length
+    ? d.reviews.map(r => {
+        const av = r.avatar
+          ? `<img class="review-avatar" src="${esc(r.avatar)}" alt="" onerror="this.style.display='none'">`
+          : `<div class="review-avatar"></div>`;
+        const thumb = r.rating === 1 ? '<div class="review-thumb up">👍</div>' : '<div class="review-thumb down">👎</div>';
+        return `
+          <div class="review-item">
+            ${av}
+            <div class="review-nick">${esc(r.nickname)}</div>
+            <div class="review-date">${formatReviewDate(r.updated_at)}</div>
+            ${thumb}
+          </div>`;
+      }).join('')
+    : '<div class="review-empty">Ще немає відгуків.</div>';
+
+  const rankTile = d.dota_rank_major
+    ? `<div style="position:relative;width:38px;height:38px">${rankIcon(d.dota_rank_major, d.dota_rank)}</div>`
+    : '';
+  const lvlBadge = lvl
+    ? `<div class="lvl-badge ${lvlClass(lvl)}">${lvl}</div>`
+    : '';
+
+  const eloHtml = d.faceit_elo
+    ? `<span style="color:var(--orange);font-weight:700">${d.faceit_elo}</span> ELO`
+    : '';
+  const subParts = [
+    d.dota_rank || 'Unranked',
+    eloHtml,
+    `<a href="${esc(d._opendota_link)}" target="_blank" rel="noopener">OpenDota ↗</a>`,
+  ].filter(Boolean);
+
+  document.getElementById('profile-body').innerHTML = `
+    <div class="profile-head">
+      ${avatar}
+      <div class="profile-head-info">
+        <div class="profile-nick">${esc(nick)}</div>
+        <div class="profile-sub">${subParts.join(' · ')}</div>
+      </div>
+      <div class="profile-head-stats">
+        ${smurfMark}
+        ${rankTile}
+        ${lvlBadge}
+      </div>
+    </div>
+
+    <div class="profile-section">
+      ${decencyHtml}
+    </div>
+
+    <div class="profile-section" style="flex-direction:column;align-items:stretch">
+      <div class="profile-label">Твоя оцінка</div>
+      ${btnsHtml}
+    </div>
+
+    <div class="profile-section" style="flex-direction:column;align-items:stretch">
+      <div class="profile-label">Відгуки (${d.reviews.length})</div>
+      <div class="review-list">${reviewsHtml}</div>
+    </div>
+  `;
+}
+
+async function submitReview(rating) {
+  if (!currentProfileAccount) return;
+  try {
+    const res = await fetch(`/api/profile/${currentProfileAccount}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Не вдалося зберегти оцінку');
+      return;
+    }
+    openProfileModal(currentProfileAccount);
+  } catch (e) {
+    alert('Помилка мережі');
+  }
+}
+
+async function removeMyReview() {
+  if (!currentProfileAccount) return;
+  try {
+    const res = await fetch(`/api/profile/${currentProfileAccount}/review`, { method: 'DELETE' });
+    if (!res.ok) return;
+    openProfileModal(currentProfileAccount);
+  } catch (e) {}
+}
+
+document.getElementById('profile-close').onclick = closeProfileModal;
+document.getElementById('profile-modal').onclick = e => {
+  if (e.target.id === 'profile-modal') closeProfileModal();
+};
+
+document.addEventListener('click', e => {
+  const card = e.target.closest('.player-card');
+  if (!card) return;
+  const accountId = card.dataset.accountId;
+  if (!accountId) return;
+  e.preventDefault();
+  openProfileModal(accountId, card.dataset.opendota, card.dataset.nickname);
 });
 </script>
 </body>
