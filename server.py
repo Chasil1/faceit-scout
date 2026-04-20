@@ -872,7 +872,7 @@ async def auth_login():
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
-        "scope": "openid profile email",
+        "scope": "openid profile",
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
