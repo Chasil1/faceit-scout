@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
@@ -12,6 +13,9 @@ import asyncpg
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("faceit")
 
 FACEIT_KEY = os.environ.get("FACEIT_KEY", "1ca837fd-a345-47c8-9adc-e78f717489e8")
 FACEIT_BASE = "https://open.faceit.com/data/v4"
@@ -103,17 +107,24 @@ def calc_position(matches):
 
 async def get_opendota_cache(account_id: int) -> dict | None:
     if not _pool:
+        log.warning("cache read skipped: pool is None")
         return None
-    row = await _pool.fetchrow(
-        """
-        SELECT rank_tier, leaderboard_rank, recent_matches
-        FROM opendota_cache
-        WHERE account_id = $1 AND cached_at > NOW() - INTERVAL '30 days'
-        """,
-        account_id,
-    )
+    try:
+        row = await _pool.fetchrow(
+            """
+            SELECT rank_tier, leaderboard_rank, recent_matches
+            FROM opendota_cache
+            WHERE account_id = $1 AND cached_at > NOW() - INTERVAL '30 days'
+            """,
+            account_id,
+        )
+    except Exception as e:
+        log.error("cache read failed for %s: %s", account_id, e)
+        return None
     if row is None:
+        log.info("cache miss for %s", account_id)
         return None
+    log.info("cache hit for %s", account_id)
     return {
         "rank_tier": row["rank_tier"],
         "leaderboard_rank": row["leaderboard_rank"],
@@ -128,22 +139,27 @@ async def set_opendota_cache(
     recent_matches: list,
 ) -> None:
     if not _pool:
+        log.warning("cache write skipped: pool is None")
         return
-    await _pool.execute(
-        """
-        INSERT INTO opendota_cache (account_id, rank_tier, leaderboard_rank, recent_matches, cached_at)
-        VALUES ($1, $2, $3, $4::jsonb, NOW())
-        ON CONFLICT (account_id) DO UPDATE
-        SET rank_tier        = EXCLUDED.rank_tier,
-            leaderboard_rank = EXCLUDED.leaderboard_rank,
-            recent_matches   = EXCLUDED.recent_matches,
-            cached_at        = EXCLUDED.cached_at
-        """,
-        account_id,
-        rank_tier,
-        leaderboard_rank,
-        json.dumps(recent_matches),
-    )
+    try:
+        await _pool.execute(
+            """
+            INSERT INTO opendota_cache (account_id, rank_tier, leaderboard_rank, recent_matches, cached_at)
+            VALUES ($1, $2, $3, $4::jsonb, NOW())
+            ON CONFLICT (account_id) DO UPDATE
+            SET rank_tier        = EXCLUDED.rank_tier,
+                leaderboard_rank = EXCLUDED.leaderboard_rank,
+                recent_matches   = EXCLUDED.recent_matches,
+                cached_at        = EXCLUDED.cached_at
+            """,
+            account_id,
+            rank_tier,
+            leaderboard_rank,
+            json.dumps(recent_matches),
+        )
+        log.info("cache write ok for %s", account_id)
+    except Exception as e:
+        log.error("cache write failed for %s: %s", account_id, e)
 
 
 async def faceit_get(s, path):
@@ -246,7 +262,18 @@ async def fetch_player(session, roster_entry):
 async def lifespan(app: FastAPI):
     global _pool
     if DATABASE_URL:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        try:
+            _pool = await asyncpg.create_pool(
+                DATABASE_URL, min_size=1, max_size=5, statement_cache_size=0
+            )
+            async with _pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            log.info("db pool ready")
+        except Exception as e:
+            log.error("db pool init failed: %s", e)
+            _pool = None
+    else:
+        log.warning("DATABASE_URL not set — caching disabled")
     yield
     if _pool:
         await _pool.close()
