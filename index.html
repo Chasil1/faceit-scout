@@ -960,6 +960,41 @@ document.getElementById('back-btn').addEventListener('click', () => {
     renderMatch(session.data);
     showView('match-view');
     if (DRAFT_STATUSES.has(session.data.status)) startPolling();
+
+    // Silently refresh smurf status — may have changed since session was saved
+    const allPlayers = [
+      ...(session.data.team1?.players || []),
+      ...(session.data.team2?.players || []),
+    ];
+    const accIds = allPlayers.map(p => p.account_id).filter(Boolean).join(',');
+    if (accIds) {
+      fetch(`/api/smurfs?ids=${accIds}`)
+        .then(r => r.json())
+        .then(({ smurfs }) => {
+          if (!smurfs || !Object.keys(smurfs).length) return;
+          let changed = false;
+          for (const p of allPlayers) {
+            const s = smurfs[String(p.account_id)];
+            const wasSmurf = p.is_smurf;
+            if (s) {
+              p.is_smurf = true;
+              p.real_rank_major = s.real_rank_major;
+              p.real_rank = s.real_rank;
+            } else {
+              p.is_smurf = false;
+              p.real_rank_major = 0;
+              p.real_rank = null;
+            }
+            if (p.is_smurf !== wasSmurf) changed = true;
+            if (p.player_id) playerCache[p.player_id] = p;
+          }
+          if (changed) {
+            saveSession(currentRoomId, session.data);
+            renderMatch(session.data);
+          }
+        })
+        .catch(() => {});
+    }
     return;
   }
   const p = new URLSearchParams(window.location.search);

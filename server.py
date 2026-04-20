@@ -549,6 +549,36 @@ async def poll_match(room_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/smurfs")
+async def get_smurfs(ids: str = ""):
+    """Return smurf flags for a comma-separated list of account_ids."""
+    if not _pool or not ids.strip():
+        return {"smurfs": {}}
+    try:
+        raw = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
+    except Exception:
+        return {"smurfs": {}}
+    if not raw:
+        return {"smurfs": {}}
+    rows = await _pool.fetch(
+        """
+        SELECT account_id, is_smurf, real_rank_tier, real_leaderboard_rank
+        FROM opendota_cache
+        WHERE account_id = ANY($1::bigint[]) AND is_smurf = true
+        """,
+        raw,
+    )
+    result = {}
+    for r in rows:
+        rmajor, rlabel = rank_label(r["real_rank_tier"], r["real_leaderboard_rank"])
+        result[str(r["account_id"])] = {
+            "is_smurf": True,
+            "real_rank_major": rmajor,
+            "real_rank": rlabel,
+        }
+    return {"smurfs": result}
+
+
 @app.post("/api/admin/backfill")
 async def admin_backfill():
     """Fetch Faceit data for cached players that are missing nicknames."""
