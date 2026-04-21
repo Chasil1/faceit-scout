@@ -862,7 +862,7 @@ async def auth_login(popup: bool = False):
     state = secrets.token_urlsafe(16)
 
     params = urlencode({
-        "redirect_popup": "false",
+        "redirect_popup": "true",
         "client_id": FACEIT_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": FACEIT_REDIRECT_URI,
@@ -1068,10 +1068,10 @@ async def exchange_code(
                     raise HTTPException(status_code=400, detail="Userinfo failed")
                 user_data = await resp.json()
 
-            dota_account_id = await fetch_faceit_dota_account_id(session, user_data["player_id"])
             await save_user_to_db(
-                user_data["player_id"], user_data["nickname"],
-                user_data.get("avatar"), dota_account_id,
+                user_data["player_id"],
+                user_data["nickname"],
+                user_data.get("avatar"),
             )
 
             jwt_token = create_jwt_token(user_data)
