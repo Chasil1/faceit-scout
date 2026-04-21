@@ -815,13 +815,14 @@ body {
 .player-card { cursor: pointer; }
 
 .p-decency {
-  font-size: .7rem; font-weight: 700; letter-spacing: .02em;
-  min-width: 30px; text-align: center; line-height: 1;
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 30px; text-align: center; line-height: 1; gap: 1px;
 }
-.p-decency.high { color: #32c850; }
-.p-decency.mid  { color: #ffd04a; }
-.p-decency.low  { color: #ff5a5a; }
-.p-decency.neutral { color: #666; }
+.p-decency .d-emoji { font-size: .85rem; line-height: 1; }
+.p-decency .d-pct   { font-size: .62rem; font-weight: 700; letter-spacing: .02em; }
+.p-decency.high .d-pct { color: #32c850; }
+.p-decency.mid  .d-pct { color: #ffd04a; }
+.p-decency.low  .d-pct { color: #ff5a5a; }
 
 .rank-lb-overlay {
   position: absolute;
@@ -1662,10 +1663,12 @@ async function loadBulkDecency() {
     const map = await res.json();
     els.forEach(el => {
       const pct = map[el.dataset.decencyAid] ?? 50;
-      const cls = pct >= 70 ? 'high' : pct >= 40 ? 'mid' : 'low';
-      el.textContent = pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(1)}%`;
+      const cls   = pct >= 70 ? 'high' : pct >= 30 ? 'mid' : 'low';
+      const emoji = pct >= 70 ? '😊' : pct >= 30 ? '😐' : '😢';
+      const pctStr = pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(1)}%`;
+      el.innerHTML = `<span class="d-emoji">${emoji}</span><span class="d-pct">${pctStr}</span>`;
       el.className = `p-decency ${cls}`;
-      el.title = `Рейтинг порядності: ${pct}%`;
+      el.title = `Рейтинг порядності: ${pctStr}`;
     });
   } catch (_) {}
 }
