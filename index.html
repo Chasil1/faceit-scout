@@ -1307,6 +1307,10 @@ function reportBuildPlayerList() {
 }
 
 function openReportModal() {
+  if (!currentUser) {
+    alert('Увійди через Faceit щоб надіслати репорт на смурфа.');
+    return;
+  }
   reportState = { player: null, tier: null, star: null };
   document.getElementById('report-feedback').className = 'report-feedback hidden';
   document.getElementById('report-discord').value = '';
