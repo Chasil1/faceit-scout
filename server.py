@@ -766,6 +766,21 @@ def _is_admin(admin_session: str | None) -> bool:
 
 
 # ── OAuth helpers ──────────────────────────────────────────────────────────
+def _normalize_userinfo(data: dict) -> dict | None:
+    """Map Faceit OIDC userinfo claims to our internal shape.
+
+    Userinfo returns {guid, nickname, picture, ...}; older Data API code
+    expects {player_id, nickname, avatar}. Returns None if no id field."""
+    faceit_id = data.get("guid") or data.get("sub") or data.get("player_id")
+    if not faceit_id:
+        return None
+    return {
+        "player_id": faceit_id,
+        "nickname": data.get("nickname") or data.get("name") or "unknown",
+        "avatar": data.get("picture") or data.get("avatar"),
+    }
+
+
 def create_jwt_token(faceit_user: dict) -> str:
     """Create JWT token with user data."""
     payload = {
@@ -955,9 +970,13 @@ async def auth_callback(
                 if resp.status != 200:
                     log.error("OAuth userinfo failed: %s", await resp.text())
                     return RedirectResponse("/?auth_error=4")
-                user_data = await resp.json()
-            
-            # Save user to database
+                raw = await resp.json()
+
+            user_data = _normalize_userinfo(raw)
+            if not user_data:
+                log.error("Userinfo missing id field: keys=%s", list(raw.keys()))
+                return RedirectResponse("/?auth_error=8")
+
             await save_user_to_db(
                 user_data["player_id"],
                 user_data["nickname"],
@@ -1066,7 +1085,12 @@ async def exchange_code(
             ) as resp:
                 if resp.status != 200:
                     raise HTTPException(status_code=400, detail="Userinfo failed")
-                user_data = await resp.json()
+                raw = await resp.json()
+
+            user_data = _normalize_userinfo(raw)
+            if not user_data:
+                log.error("Userinfo missing id field: keys=%s", list(raw.keys()))
+                raise HTTPException(status_code=400, detail="Invalid userinfo")
 
             await save_user_to_db(
                 user_data["player_id"],
