@@ -814,6 +814,15 @@ body {
 
 .player-card { cursor: pointer; }
 
+.p-decency {
+  font-size: .7rem; font-weight: 700; letter-spacing: .02em;
+  min-width: 30px; text-align: center; line-height: 1;
+}
+.p-decency.high { color: #32c850; }
+.p-decency.mid  { color: #ffd04a; }
+.p-decency.low  { color: #ff5a5a; }
+.p-decency.neutral { color: #666; }
+
 .rank-lb-overlay {
   position: absolute;
   bottom: 2px;
@@ -1163,6 +1172,7 @@ function renderPlayer(p, delay, isCaptain = false) {
         </div>
       </div>
       <div class="p-right">
+        ${acc ? `<div class="p-decency" data-decency-aid="${esc(acc)}"></div>` : ''}
         <div class="p-elo">${elo}</div>
         ${p.is_smurf ? `<div class="smurf-real" title="Реальний ранг: ${esc(p.real_rank || '?')}">${rankIcon(p.real_rank_major, p.real_rank)}</div>` : ''}
         ${rankIcon(p.dota_rank_major, p.dota_rank)}
@@ -1400,6 +1410,7 @@ async function pollStatus() {
       await Promise.all(fetches);
       // re-render teams with updated cache
       rerenderTeams(data);
+      loadBulkDecency();
     }
 
     // stop polling if match is no longer in draft/live state
@@ -1502,6 +1513,7 @@ async function loadMatch(roomId) {
     saveSession(roomId, data);
     renderMatch(data);
     showView('match-view');
+    loadBulkDecency();
 
     // start polling if draft is active
     if (DRAFT_STATUSES.has(data.status)) {
@@ -1573,6 +1585,7 @@ document.getElementById('back-btn').addEventListener('click', () => {
 
     renderMatch(session.data);
     showView('match-view');
+    loadBulkDecency();
     if (DRAFT_STATUSES.has(session.data.status)) startPolling();
     return;
   }
@@ -1619,9 +1632,42 @@ document.getElementById('logout-btn').addEventListener('click', () => {
   window.location.href = '/auth/logout';
 });
 
-function openOwnProfile() {
-  if (!currentUser || !currentUser.dota_account_id) return;
-  openProfileModal(currentUser.dota_account_id, null, currentUser.nickname);
+async function openOwnProfile() {
+  if (!currentUser) return;
+  if (currentUser.dota_account_id) {
+    openProfileModal(currentUser.dota_account_id, null, currentUser.nickname);
+    return;
+  }
+  try {
+    const res = await fetch('/api/profile/me');
+    if (res.ok) {
+      const d = await res.json();
+      currentUser.dota_account_id = d.account_id;
+      openProfileModal(d.account_id, null, currentUser.nickname);
+    } else {
+      alert('Спочатку виконай пошук будь-якої кімнати — так ми дізнаємось твій Dota 2 акаунт.');
+    }
+  } catch (e) {
+    alert('Помилка з\'єднання');
+  }
+}
+
+async function loadBulkDecency() {
+  const els = [...document.querySelectorAll('[data-decency-aid]')];
+  if (!els.length) return;
+  const ids = [...new Set(els.map(e => e.dataset.decencyAid).filter(Boolean))];
+  try {
+    const res = await fetch(`/api/decency?ids=${ids.join(',')}`);
+    if (!res.ok) return;
+    const map = await res.json();
+    els.forEach(el => {
+      const pct = map[el.dataset.decencyAid] ?? 50;
+      const cls = pct >= 70 ? 'high' : pct >= 40 ? 'mid' : 'low';
+      el.textContent = pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(1)}%`;
+      el.className = `p-decency ${cls}`;
+      el.title = `Рейтинг порядності: ${pct}%`;
+    });
+  } catch (_) {}
 }
 
 // ── Login popup ────────────────────────────────────────────────────────

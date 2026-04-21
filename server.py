@@ -1122,6 +1122,17 @@ async def auth_me(request: Request):
     if not user:
         return JSONResponse({"authenticated": False}, status_code=200)
     dota_account_id = await get_user_dota_account_id(user["faceit_id"])
+    # Fallback: look in opendota_cache by faceit_player_id
+    if dota_account_id is None and _pool:
+        try:
+            row = await _pool.fetchrow(
+                "SELECT account_id FROM opendota_cache WHERE faceit_player_id = $1 LIMIT 1",
+                user["faceit_id"],
+            )
+            if row:
+                dota_account_id = row["account_id"]
+        except Exception:
+            pass
     return JSONResponse({
         "authenticated": True,
         "faceit_id": user["faceit_id"],
@@ -1129,6 +1140,59 @@ async def auth_me(request: Request):
         "avatar": user.get("avatar"),
         "dota_account_id": dota_account_id,
     })
+
+
+@app.get("/api/profile/me")
+async def get_own_profile_id(request: Request):
+    """Return the account_id for the logged-in user so they can open their own profile."""
+    viewer = get_current_user(request)
+    if not viewer:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="DB not available")
+    row = await _pool.fetchrow(
+        "SELECT account_id FROM opendota_cache WHERE faceit_player_id = $1 LIMIT 1",
+        viewer["faceit_id"],
+    )
+    if row:
+        return JSONResponse({"account_id": row["account_id"]})
+    # Try Faceit API as last resort
+    try:
+        async with aiohttp.ClientSession() as session:
+            account_id = await fetch_faceit_dota_account_id(session, viewer["faceit_id"])
+        if account_id:
+            return JSONResponse({"account_id": account_id})
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="no_dota_account")
+
+
+@app.get("/api/decency")
+async def bulk_decency(ids: str = ""):
+    """Return decency % for a comma-separated list of dota account_ids."""
+    if not _pool or not ids:
+        return JSONResponse({})
+    try:
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    except ValueError:
+        return JSONResponse({})
+    if not id_list:
+        return JSONResponse({})
+    rows = await _pool.fetch(
+        """
+        SELECT target_account_id,
+               COUNT(*) FILTER (WHERE rating = 1)  AS likes,
+               COUNT(*) FILTER (WHERE rating = -1) AS dislikes
+        FROM player_reviews
+        WHERE target_account_id = ANY($1::bigint[])
+        GROUP BY target_account_id
+        """,
+        id_list,
+    )
+    result = {str(r["target_account_id"]): _compute_decency(r["likes"], r["dislikes"]) for r in rows}
+    for aid in id_list:
+        result.setdefault(str(aid), 50.0)
+    return JSONResponse(result)
 
 
 class ReviewCreate(BaseModel):
