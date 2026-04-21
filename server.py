@@ -1133,6 +1133,7 @@ async def auth_me(request: Request):
 
 class ReviewCreate(BaseModel):
     rating: int
+    comment: str | None = None
 
 
 def _compute_decency(likes: int, dislikes: int) -> float:
@@ -1146,30 +1147,48 @@ async def get_profile(account_id: int, request: Request):
     if not _pool:
         raise HTTPException(status_code=503, detail="DB not available")
 
-    cache_row = await _pool.fetchrow(
-        """
-        SELECT account_id, nickname, avatar, rank_tier, leaderboard_rank,
-               faceit_player_id, faceit_level, faceit_elo,
-               is_smurf, real_rank_tier, real_leaderboard_rank
-        FROM opendota_cache
-        WHERE account_id = $1
-        """,
-        account_id,
-    )
+    viewer = get_current_user(request)
+    viewer_faceit_id = viewer["faceit_id"] if viewer else ""
 
-    reviews_rows = await _pool.fetch(
-        """
-        SELECT r.rating, r.updated_at, u.faceit_id, u.nickname, u.avatar
-        FROM player_reviews r
-        LEFT JOIN users u ON u.faceit_id = r.reviewer_faceit_id
-        WHERE r.target_account_id = $1
-        ORDER BY r.updated_at DESC
-        """,
-        account_id,
+    cache_row, reviews_rows = await asyncio.gather(
+        _pool.fetchrow(
+            """
+            SELECT account_id, nickname, avatar, rank_tier, leaderboard_rank,
+                   faceit_player_id, faceit_level, faceit_elo,
+                   is_smurf, real_rank_tier, real_leaderboard_rank,
+                   recent_matches
+            FROM opendota_cache
+            WHERE account_id = $1
+            """,
+            account_id,
+        ),
+        _pool.fetch(
+            """
+            SELECT r.rating, r.comment, r.updated_at,
+                   u.faceit_id, u.nickname, u.avatar
+            FROM player_reviews r
+            LEFT JOIN users u ON u.faceit_id = r.reviewer_faceit_id
+            WHERE r.target_account_id = $1
+            ORDER BY (r.reviewer_faceit_id = $2) DESC, r.updated_at DESC
+            """,
+            account_id,
+            viewer_faceit_id,
+        ),
     )
 
     likes = sum(1 for r in reviews_rows if r["rating"] == 1)
     dislikes = sum(1 for r in reviews_rows if r["rating"] == -1)
+
+    my_review = None
+    my_comment = None
+    viewer_dota_id = None
+    if viewer:
+        viewer_dota_id = await get_user_dota_account_id(viewer_faceit_id)
+        for r in reviews_rows:
+            if r["faceit_id"] == viewer_faceit_id:
+                my_review = r["rating"]
+                my_comment = r["comment"]
+                break
 
     reviews = [
         {
@@ -1177,49 +1196,65 @@ async def get_profile(account_id: int, request: Request):
             "nickname": r["nickname"] or "Unknown",
             "avatar": r["avatar"],
             "rating": r["rating"],
+            "comment": r["comment"],
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "is_mine": r["faceit_id"] == viewer_faceit_id,
         }
         for r in reviews_rows
     ]
 
-    viewer = get_current_user(request)
-    my_review = None
-    viewer_dota_id = None
-    if viewer:
-        viewer_dota_id = await get_user_dota_account_id(viewer["faceit_id"])
-        for r in reviews_rows:
-            if r["faceit_id"] == viewer["faceit_id"]:
-                my_review = r["rating"]
-                break
-
-    rank_major, rank_label = (
+    rank_major, rank_lbl = (
         rank_label(cache_row["rank_tier"], cache_row["leaderboard_rank"])
         if cache_row and cache_row["rank_tier"]
         else (0, "Unranked")
     )
-    real_major, real_label = (
+    real_major, real_lbl = (
         rank_label(cache_row["real_rank_tier"], cache_row["real_leaderboard_rank"])
         if cache_row and cache_row["is_smurf"] and cache_row["real_rank_tier"]
         else (None, None)
     )
 
+    pos1, pos2 = None, None
+    if cache_row and cache_row["recent_matches"]:
+        recent = cache_row["recent_matches"]
+        if isinstance(recent, str):
+            recent = json.loads(recent)
+        if isinstance(recent, list):
+            pos1, pos2 = calc_position(recent)
+
+    faceit_winrate = None
+    faceit_pid = cache_row["faceit_player_id"] if cache_row else None
+    if faceit_pid:
+        try:
+            async with aiohttp.ClientSession() as session:
+                stats = await faceit_get(session, f"/players/{faceit_pid}/stats/dota2")
+                wr = (stats.get("lifetime") or {}).get("Win Rate %")
+                if wr is not None:
+                    faceit_winrate = float(wr)
+        except Exception:
+            pass
+
     return JSONResponse({
         "account_id": account_id,
         "nickname": cache_row["nickname"] if cache_row else None,
         "avatar": cache_row["avatar"] if cache_row else None,
-        "faceit_player_id": cache_row["faceit_player_id"] if cache_row else None,
+        "faceit_player_id": faceit_pid,
         "faceit_level": cache_row["faceit_level"] if cache_row else None,
         "faceit_elo": cache_row["faceit_elo"] if cache_row else None,
-        "dota_rank": rank_label,
+        "faceit_winrate": faceit_winrate,
+        "dota_rank": rank_lbl,
         "dota_rank_major": rank_major,
         "is_smurf": bool(cache_row["is_smurf"]) if cache_row else False,
-        "real_rank": real_label,
+        "real_rank": real_lbl,
         "real_rank_major": real_major,
+        "position": pos1,
+        "position2": pos2,
         "decency_pct": _compute_decency(likes, dislikes),
         "likes": likes,
         "dislikes": dislikes,
         "reviews": reviews,
         "my_review": my_review,
+        "my_comment": my_comment,
         "can_review": bool(viewer) and viewer_dota_id != account_id,
         "is_self": viewer_dota_id == account_id if viewer else False,
     })
@@ -1239,16 +1274,18 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
     if viewer_dota_id == account_id:
         raise HTTPException(status_code=400, detail="Cannot review yourself")
 
+    comment = (body.comment or "").strip() or None
     await _pool.execute(
         """
-        INSERT INTO player_reviews (reviewer_faceit_id, target_account_id, rating, updated_at)
-        VALUES ($1, $2, $3, NOW())
+        INSERT INTO player_reviews (reviewer_faceit_id, target_account_id, rating, comment, updated_at)
+        VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT (reviewer_faceit_id, target_account_id)
-        DO UPDATE SET rating = EXCLUDED.rating, updated_at = NOW()
+        DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
         """,
         viewer["faceit_id"],
         account_id,
         body.rating,
+        comment,
     )
     return {"ok": True}
 

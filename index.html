@@ -777,6 +777,33 @@ body {
 
 .review-empty { color: var(--dim); font-size: .8rem; text-align: center; padding: .8rem 0; }
 
+.review-comment-text {
+  font-size: .78rem; color: #bbb; margin-top: .2rem;
+  line-height: 1.4; word-break: break-word;
+}
+.review-item { flex-wrap: wrap; }
+.review-item-meta { display: flex; align-items: center; gap: .6rem; width: 100%; }
+
+.review-form { margin-top: .6rem; width: 100%; }
+.review-textarea {
+  width: 100%; box-sizing: border-box;
+  background: #181818; border: 1px solid #333; color: #ddd;
+  font-size: .83rem; font-family: inherit; padding: .5rem .65rem;
+  resize: vertical; min-height: 64px; max-height: 160px;
+  outline: none; transition: border-color .15s;
+}
+.review-textarea:focus { border-color: #555; }
+.review-textarea::placeholder { color: #555; }
+.review-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; flex-wrap: wrap; }
+
+.profile-stat-row {
+  display: flex; gap: 1.2rem; flex-wrap: wrap;
+  font-size: .82rem; color: #ccc;
+}
+.profile-stat { display: flex; flex-direction: column; gap: .1rem; }
+.profile-stat-label { font-size: .68rem; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+.profile-stat-value { font-weight: 700; color: #eee; }
+
 .player-card { cursor: pointer; }
 
 .rank-lb-overlay {
@@ -1673,6 +1700,8 @@ function closeProfileModal() {
   currentProfileAccount = null;
 }
 
+let pendingRating = null;
+
 function renderProfile(d) {
   const nick = d.nickname || d._fallback_nickname || `#${d.account_id}`;
   const avatar = d.avatar
@@ -1694,6 +1723,8 @@ function renderProfile(d) {
       <div class="decency-bar"><div class="decency-fill ${dcClass}" style="width:${d.decency_pct}%"></div></div>
     </div>`;
 
+  pendingRating = d.my_review ?? null;
+
   let btnsHtml;
   if (d.is_self) {
     btnsHtml = `<div class="review-note">Це твій акаунт — оцінити себе не можна.</div>`;
@@ -1708,13 +1739,20 @@ function renderProfile(d) {
     const likeActive = d.my_review === 1 ? 'active like' : '';
     const dislikeActive = d.my_review === -1 ? 'active dislike' : '';
     const removeBtn = d.my_review != null
-      ? `<button class="review-btn" onclick="removeMyReview()">Прибрати оцінку</button>`
+      ? `<button class="review-btn" id="remove-review-btn" onclick="removeMyReview()">Видалити</button>`
       : '';
+    const existingComment = d.my_comment || '';
     btnsHtml = `
       <div class="review-btns">
-        <button class="review-btn ${likeActive}" onclick="submitReview(1)"><span class="thumb">👍</span>Лайк</button>
-        <button class="review-btn ${dislikeActive}" onclick="submitReview(-1)"><span class="thumb">👎</span>Дизлайк</button>
+        <button class="review-btn ${likeActive}" id="like-btn" onclick="selectRating(1)"><span class="thumb">👍</span>Лайк</button>
+        <button class="review-btn ${dislikeActive}" id="dislike-btn" onclick="selectRating(-1)"><span class="thumb">👎</span>Дизлайк</button>
         ${removeBtn}
+      </div>
+      <div class="review-form">
+        <textarea id="review-comment" class="review-textarea" placeholder="Коментар (необов'язково)" maxlength="500">${esc(existingComment)}</textarea>
+        <div class="review-actions">
+          <button class="review-btn" style="background:var(--orange);border-color:var(--orange);color:#111" onclick="submitReview()">Зберегти відгук</button>
+        </div>
       </div>`;
   }
 
@@ -1724,12 +1762,18 @@ function renderProfile(d) {
           ? `<img class="review-avatar" src="${esc(r.avatar)}" alt="" onerror="this.style.display='none'">`
           : `<div class="review-avatar"></div>`;
         const thumb = r.rating === 1 ? '<div class="review-thumb up">👍</div>' : '<div class="review-thumb down">👎</div>';
+        const commentHtml = r.comment
+          ? `<div class="review-comment-text">${esc(r.comment)}</div>`
+          : '';
         return `
           <div class="review-item">
-            ${av}
-            <div class="review-nick">${esc(r.nickname)}</div>
-            <div class="review-date">${formatReviewDate(r.updated_at)}</div>
-            ${thumb}
+            <div class="review-item-meta">
+              ${av}
+              <div class="review-nick">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>
+              <div class="review-date">${formatReviewDate(r.updated_at)}</div>
+              ${thumb}
+            </div>
+            ${commentHtml}
           </div>`;
       }).join('')
     : '<div class="review-empty">Ще немає відгуків.</div>';
@@ -1741,14 +1785,25 @@ function renderProfile(d) {
     ? `<div class="lvl-badge ${lvlClass(lvl)}">${lvl}</div>`
     : '';
 
-  const eloHtml = d.faceit_elo
-    ? `<span style="color:var(--orange);font-weight:700">${d.faceit_elo}</span> ELO`
-    : '';
+  const statsHtml = (() => {
+    const items = [];
+    if (d.dota_rank) items.push({ label: 'Ранг Dota', value: d.dota_rank });
+    if (d.is_smurf && d.real_rank) items.push({ label: 'Смурф ранг', value: d.real_rank });
+    if (d.faceit_elo) items.push({ label: 'Faceit ELO', value: d.faceit_elo });
+    if (d.faceit_winrate != null) items.push({ label: 'Вінрейт Faceit', value: `${d.faceit_winrate}%` });
+    if (d.position) {
+      const roles = [d.position, d.position2].filter(Boolean).join(' / ');
+      items.push({ label: 'Ролі', value: roles });
+    }
+    if (!items.length) return '';
+    return `<div class="profile-stat-row">${items.map(it =>
+      `<div class="profile-stat"><div class="profile-stat-label">${it.label}</div><div class="profile-stat-value">${esc(String(it.value))}</div></div>`
+    ).join('')}</div>`;
+  })();
+
   const subParts = [
-    d.dota_rank || 'Unranked',
-    eloHtml,
     `<a href="${esc(d._opendota_link)}" target="_blank" rel="noopener">OpenDota ↗</a>`,
-  ].filter(Boolean);
+  ];
 
   document.getElementById('profile-body').innerHTML = `
     <div class="profile-head">
@@ -1763,6 +1818,8 @@ function renderProfile(d) {
         ${lvlBadge}
       </div>
     </div>
+
+    ${statsHtml ? `<div class="profile-section">${statsHtml}</div>` : ''}
 
     <div class="profile-section">
       ${decencyHtml}
@@ -1780,13 +1837,23 @@ function renderProfile(d) {
   `;
 }
 
-async function submitReview(rating) {
+function selectRating(val) {
+  pendingRating = pendingRating === val ? null : val;
+  const lb = document.getElementById('like-btn');
+  const db = document.getElementById('dislike-btn');
+  if (lb) lb.className = 'review-btn' + (pendingRating === 1 ? ' active like' : '');
+  if (db) db.className = 'review-btn' + (pendingRating === -1 ? ' active dislike' : '');
+}
+
+async function submitReview() {
   if (!currentProfileAccount) return;
+  if (pendingRating == null) { alert('Оберіть 👍 або 👎'); return; }
+  const comment = (document.getElementById('review-comment')?.value || '').trim();
   try {
     const res = await fetch(`/api/profile/${currentProfileAccount}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating }),
+      body: JSON.stringify({ rating: pendingRating, comment: comment || null }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1804,6 +1871,7 @@ async function removeMyReview() {
   try {
     const res = await fetch(`/api/profile/${currentProfileAccount}/review`, { method: 'DELETE' });
     if (!res.ok) return;
+    pendingRating = null;
     openProfileModal(currentProfileAccount);
   } catch (e) {}
 }
