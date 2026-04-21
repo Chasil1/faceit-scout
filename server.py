@@ -1255,8 +1255,11 @@ async def get_profile(account_id: int, request: Request):
         "reviews": reviews,
         "my_review": my_review,
         "my_comment": my_comment,
-        "can_review": bool(viewer) and viewer_dota_id != account_id,
-        "is_self": viewer_dota_id == account_id if viewer else False,
+        "can_review": bool(viewer) and viewer_dota_id != account_id and (
+            not cache_row or cache_row["faceit_player_id"] != viewer_faceit_id
+        ),
+        "is_self": (viewer_dota_id == account_id if viewer_dota_id else False)
+            or (bool(viewer_faceit_id) and bool(cache_row) and cache_row["faceit_player_id"] == viewer_faceit_id),
     })
 
 

@@ -84,6 +84,14 @@ body {
 }
 .logout-btn:hover { border-color: var(--orange); color: var(--orange); }
 
+.user-profile-btn {
+  display: flex; align-items: center; gap: .45rem;
+  cursor: pointer; padding: .2rem .3rem;
+  border: 1px solid transparent; transition: border-color .15s;
+}
+.user-profile-btn:hover { border-color: var(--border2); }
+.user-profile-btn:hover .user-name { color: var(--orange); }
+
 /* ─── VIEWS ──────────────────────────────────────────────────────────── */
 .view { display: none; }
 .view.active { display: block; }
@@ -862,8 +870,10 @@ body {
     <a href="/auth/login" class="auth-btn" id="login-btn" onclick="return openLoginPopup()">ВХІД ЧЕРЕЗ FACEIT</a>
   </div>
   <div id="auth-logged-in" class="user-menu" style="display:none">
-    <img id="user-avatar" class="user-avatar" src="" alt="">
-    <span id="user-name" class="user-name"></span>
+    <div id="user-profile-btn" class="user-profile-btn" onclick="openOwnProfile()" title="Мій профіль">
+      <img id="user-avatar" class="user-avatar" src="" alt="">
+      <span id="user-name" class="user-name"></span>
+    </div>
     <button id="logout-btn" class="logout-btn">ВИХІД</button>
   </div>
 </div>
@@ -1608,6 +1618,11 @@ checkAuth();
 document.getElementById('logout-btn').addEventListener('click', () => {
   window.location.href = '/auth/logout';
 });
+
+function openOwnProfile() {
+  if (!currentUser || !currentUser.dota_account_id) return;
+  openProfileModal(currentUser.dota_account_id, null, currentUser.nickname);
+}
 
 // ── Login popup ────────────────────────────────────────────────────────
 let _loginPopup = null;
