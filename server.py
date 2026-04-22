@@ -575,13 +575,15 @@ class ReportCreate(BaseModel):
 
 
 @app.post("/api/report")
-async def submit_report(body: ReportCreate):
+async def submit_report(body: ReportCreate, request: Request):
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
+    current = get_current_user(request)
+    reporter_faceit_id = current["faceit_id"] if current else None
     row = await _pool.fetchrow(
         """
-        INSERT INTO smurf_reports (account_id, nickname, real_rank_tier, real_leaderboard_rank, match_room_id, discord)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO smurf_reports (account_id, nickname, real_rank_tier, real_leaderboard_rank, match_room_id, discord, reporter_faceit_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         """,
         body.account_id,
@@ -590,6 +592,7 @@ async def submit_report(body: ReportCreate):
         body.real_leaderboard_rank,
         body.match_room_id,
         body.discord,
+        reporter_faceit_id,
     )
     return {"ok": True, "report_id": row["id"]}
 
@@ -602,10 +605,12 @@ async def admin_list_reports(admin_session: str | None = Cookie(default=None)):
         raise HTTPException(status_code=503, detail="db unavailable")
     rows = await _pool.fetch(
         """
-        SELECT id, account_id, nickname, real_rank_tier, real_leaderboard_rank,
-               match_room_id, created_at, reviewed, action_taken, discord
-        FROM smurf_reports
-        ORDER BY reviewed ASC, created_at DESC
+        SELECT sr.id, sr.account_id, sr.nickname, sr.real_rank_tier, sr.real_leaderboard_rank,
+               sr.match_room_id, sr.created_at, sr.reviewed, sr.action_taken, sr.discord,
+               sr.reporter_faceit_id, u.nickname AS reporter_nickname, u.avatar AS reporter_avatar
+        FROM smurf_reports sr
+        LEFT JOIN users u ON u.faceit_id = sr.reporter_faceit_id
+        ORDER BY sr.reviewed ASC, sr.created_at DESC
         LIMIT 200
         """
     )
@@ -627,6 +632,9 @@ async def admin_list_reports(admin_session: str | None = Cookie(default=None)):
             "reviewed": r["reviewed"],
             "action_taken": r["action_taken"],
             "discord": r["discord"],
+            "reporter_faceit_id": r["reporter_faceit_id"],
+            "reporter_nickname": r["reporter_nickname"],
+            "reporter_avatar": r["reporter_avatar"],
         })
     return {"reports": out}
 

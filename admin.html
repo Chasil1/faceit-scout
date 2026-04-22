@@ -726,6 +726,11 @@ function renderReports() {
           </div>
           ${r.discord ? `<div class="rc-meta" style="margin-top:.2rem">Discord: <span style="color:var(--text)">${esc(r.discord)}</span></div>` : ''}
           ${matchLink ? `<div class="rc-meta" style="margin-top:.2rem">Матч: ${matchLink}</div>` : ''}
+          <div class="rc-meta" style="margin-top:.2rem">
+            Репортер: ${r.reporter_nickname
+              ? `<a href="https://www.faceit.com/en/players/${esc(r.reporter_nickname)}" target="_blank" rel="noopener" style="color:var(--orange);text-decoration:none">${esc(r.reporter_nickname)}</a>`
+              : '<span style="color:var(--muted)">невідомо</span>'}
+          </div>
           <div class="rc-rank">Заявлений ранг: ${rankHtml}</div>
         </div>
         <div class="rc-actions">

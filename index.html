@@ -1607,6 +1607,15 @@ document.getElementById('back-btn').addEventListener('click', () => {
   if (r) {
     document.getElementById('room-input').value = r;
     loadMatch(r);
+    return;
+  }
+  const playerParam = p.get('player');
+  if (playerParam) {
+    const accountId = parseInt(playerParam, 10);
+    if (accountId) {
+      // wait for DOM to be ready, then open profile
+      openProfileModal(accountId, null, null);
+    }
   }
 })();
 
