@@ -405,6 +405,14 @@ td.nick a:hover { color: var(--orange); }
   <div class="reviews-list" id="reviews-list"></div>
 </div>
 
+<!-- Player profile iframe overlay -->
+<div class="modal-bg" id="player-overlay" style="padding:0;align-items:stretch;justify-content:flex-end">
+  <div style="position:relative;width:100%;max-width:860px;background:var(--bg);display:flex;flex-direction:column">
+    <button id="player-overlay-close" style="position:absolute;top:.6rem;right:.8rem;z-index:10;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:inherit;font-size:.8rem;font-weight:700;padding:.3rem .7rem;cursor:pointer;letter-spacing:.05em">✕ Закрити</button>
+    <iframe id="player-overlay-frame" src="" style="flex:1;border:none;width:100%;height:100vh"></iframe>
+  </div>
+</div>
+
 <!-- Rank picker modal -->
 <div class="modal-bg" id="rank-modal">
   <div class="modal">
@@ -809,7 +817,7 @@ function renderReviews() {
   list.innerHTML = reviewsData.map((rv, idx) => {
     const ratingIcon = rv.rating === 1 ? '👍' : '👎';
     const targetLink = rv.target_account_id
-      ? `<a href="/?player=${rv.target_account_id}" target="_blank">${esc(rv.target_nickname || rv.target_account_id)}</a>`
+      ? `<span class="rv-player-link" data-acc="${rv.target_account_id}" style="color:var(--orange);cursor:pointer;text-decoration:underline">${esc(rv.target_nickname || rv.target_account_id)}</span>`
       : esc(rv.target_nickname || rv.target_account_id);
     const reviewerText = esc(rv.reviewer_nickname || rv.reviewer_faceit_id);
     const commentHtml = rv.comment
@@ -838,6 +846,9 @@ function renderReviews() {
   list.querySelectorAll('.rv-del-btn').forEach(btn => {
     btn.onclick = () => deleteReview(btn.dataset.reviewer, btn.dataset.target);
   });
+  list.querySelectorAll('.rv-player-link').forEach(el => {
+    el.onclick = () => openPlayerOverlay(el.dataset.acc);
+  });
 }
 
 async function deleteReview(reviewerFaceitId, targetAccountId) {
@@ -850,6 +861,29 @@ async function deleteReview(reviewerFaceitId, targetAccountId) {
     alert('Помилка: ' + e.message);
   }
 }
+
+// ── Player overlay ─────────────────────────────────────────────────────
+function openPlayerOverlay(accountId) {
+  const overlay = document.getElementById('player-overlay');
+  document.getElementById('player-overlay-frame').src = `/?player=${accountId}`;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closePlayerOverlay() {
+  document.getElementById('player-overlay').classList.remove('open');
+  document.getElementById('player-overlay-frame').src = '';
+  document.body.style.overflow = '';
+}
+document.getElementById('player-overlay-close').onclick = closePlayerOverlay;
+document.getElementById('player-overlay').addEventListener('click', e => {
+  if (e.target.id === 'player-overlay') closePlayerOverlay();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closePlayerOverlay();
+    closeModal();
+  }
+});
 
 // ── Load initial data + reports badge
 buildModalControls();
