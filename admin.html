@@ -45,6 +45,28 @@
 .rc-btn.confirm { background: rgba(255,85,0,.12); border-color: var(--orange); color: var(--orange); }
 .rc-time { font-size: .68rem; color: var(--muted); }
 .no-reports { text-align: center; color: var(--dim); padding: 2rem; font-size: .9rem; }
+
+/* Reviews */
+.reviews-list { display: flex; flex-direction: column; gap: .5rem; }
+.review-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  padding: .7rem 1rem; display: flex; gap: .9rem; align-items: flex-start;
+}
+.review-card .rv-rating { font-size: 1.2rem; flex-shrink: 0; padding-top: .1rem; }
+.review-card .rv-body { flex: 1; min-width: 0; }
+.review-card .rv-players { font-size: .78rem; color: var(--dim); margin-bottom: .25rem; display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+.review-card .rv-players a { color: var(--orange); text-decoration: none; }
+.review-card .rv-players a:hover { text-decoration: underline; }
+.review-card .rv-comment { font-size: .9rem; color: var(--text); word-break: break-word; }
+.review-card .rv-comment.empty { color: var(--muted); font-style: italic; }
+.review-card .rv-time { font-size: .66rem; color: var(--muted); margin-top: .25rem; }
+.review-card .rv-actions { flex-shrink: 0; }
+.rv-del-btn {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--dim);
+  padding: .28rem .6rem; font-family: inherit; font-size: .72rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.rv-del-btn:hover { border-color: var(--red); color: var(--red); }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -344,6 +366,7 @@ td.nick a:hover { color: var(--orange); }
 <div class="tabs">
   <button class="tab-btn active" data-tab="players">Гравці <span class="meta" id="count" style="font-size:.75rem;color:var(--dim);font-weight:400;letter-spacing:0;text-transform:none;margin-left:.35rem"></span></button>
   <button class="tab-btn" data-tab="reports">Репорти <span class="tab-badge hidden" id="report-badge"></span></button>
+  <button class="tab-btn" data-tab="reviews">Відгуки <span class="tab-badge hidden" id="reviews-badge"></span></button>
 </div>
 
 <!-- Players tab -->
@@ -374,6 +397,12 @@ td.nick a:hover { color: var(--orange); }
 <div class="tab-panel" id="tab-reports">
   <div id="reports-state" class="state">Завантаження…</div>
   <div class="reports-list" id="reports-list"></div>
+</div>
+
+<!-- Reviews tab -->
+<div class="tab-panel" id="tab-reviews">
+  <div id="reviews-state" class="state">Завантаження…</div>
+  <div class="reviews-list" id="reviews-list"></div>
 </div>
 
 <!-- Rank picker modal -->
@@ -627,6 +656,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'reports') loadReports();
+    if (btn.dataset.tab === 'reviews') loadReviews();
   };
 });
 
@@ -735,7 +765,88 @@ async function reportDismiss(reportId) {
   } catch(e) { alert('Помилка: ' + e.message); }
 }
 
-// Load initial data + reports badge
+// ── Reviews ────────────────────────────────────────────────────────────
+let reviewsData = [];
+
+async function loadReviews() {
+  document.getElementById('reviews-state').style.display = '';
+  document.getElementById('reviews-state').textContent = 'Завантаження…';
+  document.getElementById('reviews-list').innerHTML = '';
+  try {
+    const r = await fetch('/api/admin/reviews');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    reviewsData = data.reviews || [];
+    renderReviews();
+  } catch (e) {
+    document.getElementById('reviews-state').textContent = 'Помилка: ' + e.message;
+  }
+}
+
+function renderReviews() {
+  const badge = document.getElementById('reviews-badge');
+  if (reviewsData.length) {
+    badge.textContent = reviewsData.length;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+
+  const list = document.getElementById('reviews-list');
+  if (reviewsData.length === 0) {
+    document.getElementById('reviews-state').style.display = '';
+    document.getElementById('reviews-state').textContent = 'Відгуків немає.';
+    list.innerHTML = '';
+    return;
+  }
+  document.getElementById('reviews-state').style.display = 'none';
+
+  list.innerHTML = reviewsData.map((rv, idx) => {
+    const ratingIcon = rv.rating === 1 ? '👍' : '👎';
+    const targetLink = rv.target_account_id
+      ? `<a href="/?player=${rv.target_account_id}" target="_blank">${esc(rv.target_nickname || rv.target_account_id)}</a>`
+      : esc(rv.target_nickname || rv.target_account_id);
+    const reviewerText = esc(rv.reviewer_nickname || rv.reviewer_faceit_id);
+    const commentHtml = rv.comment
+      ? `<div class="rv-comment">${esc(rv.comment)}</div>`
+      : `<div class="rv-comment empty">(без коментаря)</div>`;
+    return `
+      <div class="review-card" data-idx="${idx}">
+        <div class="rv-rating">${ratingIcon}</div>
+        <div class="rv-body">
+          <div class="rv-players">
+            <span>${reviewerText}</span>
+            <span style="color:var(--muted)">→</span>
+            ${targetLink}
+          </div>
+          ${commentHtml}
+          <div class="rv-time">${fmtTime(rv.updated_at)}</div>
+        </div>
+        <div class="rv-actions">
+          <button class="rv-del-btn" data-reviewer="${esc(rv.reviewer_faceit_id)}" data-target="${rv.target_account_id}">
+            Видалити
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.rv-del-btn').forEach(btn => {
+    btn.onclick = () => deleteReview(btn.dataset.reviewer, btn.dataset.target);
+  });
+}
+
+async function deleteReview(reviewerFaceitId, targetAccountId) {
+  if (!confirm('Видалити цей відгук?')) return;
+  try {
+    const r = await fetch(`/api/admin/reviews/${encodeURIComponent(reviewerFaceitId)}/${targetAccountId}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadReviews();
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+  }
+}
+
+// ── Load initial data + reports badge
 buildModalControls();
 load().then(() => {
   const missing = players.some(p => !p.nickname);

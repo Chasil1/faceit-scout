@@ -1442,6 +1442,58 @@ class SmurfUpdate(BaseModel):
     real_leaderboard_rank: int | None = None
 
 
+@app.get("/api/admin/reviews")
+async def admin_list_reviews(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    rows = await _pool.fetch(
+        """
+        SELECT pr.reviewer_faceit_id, pr.target_account_id, pr.rating, pr.comment, pr.updated_at,
+               u.nickname AS reviewer_nickname, u.avatar AS reviewer_avatar,
+               oc.nickname AS target_nickname
+        FROM player_reviews pr
+        LEFT JOIN users u ON u.faceit_id = pr.reviewer_faceit_id
+        LEFT JOIN opendota_cache oc ON oc.account_id = pr.target_account_id
+        ORDER BY pr.updated_at DESC
+        LIMIT 500
+        """
+    )
+    return {"reviews": [
+        {
+            "reviewer_faceit_id": r["reviewer_faceit_id"],
+            "reviewer_nickname": r["reviewer_nickname"] or r["reviewer_faceit_id"][:8],
+            "reviewer_avatar": r["reviewer_avatar"],
+            "target_account_id": r["target_account_id"],
+            "target_nickname": r["target_nickname"],
+            "rating": r["rating"],
+            "comment": r["comment"],
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+        }
+        for r in rows
+    ]}
+
+
+@app.delete("/api/admin/reviews/{reviewer_faceit_id}/{target_account_id}")
+async def admin_delete_review(
+    reviewer_faceit_id: str,
+    target_account_id: int,
+    admin_session: str | None = Cookie(default=None),
+):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    result = await _pool.execute(
+        "DELETE FROM player_reviews WHERE reviewer_faceit_id = $1 AND target_account_id = $2",
+        reviewer_faceit_id, target_account_id,
+    )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="review not found")
+    return {"ok": True}
+
+
 @app.post("/api/admin/smurf/{account_id}")
 async def admin_set_smurf(account_id: int, body: SmurfUpdate, admin_session: str | None = Cookie(default=None)):
     if not _is_admin(admin_session):
