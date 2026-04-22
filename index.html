@@ -1843,9 +1843,14 @@ function renderProfile(d) {
 
   const reviewsHtml = d.reviews && d.reviews.length
     ? d.reviews.map(r => {
+        const canClick = r.reviewer_account_id && !r.is_mine;
+        const clickAttr = canClick ? `style="cursor:pointer" onclick="openProfileModal(${r.reviewer_account_id})"` : '';
         const av = r.avatar
-          ? `<img class="review-avatar" src="${esc(r.avatar)}" alt="" onerror="this.style.display='none'">`
-          : `<div class="review-avatar"></div>`;
+          ? `<img class="review-avatar" src="${esc(r.avatar)}" alt="" onerror="this.style.display='none'" ${clickAttr}>`
+          : `<div class="review-avatar" ${clickAttr}></div>`;
+        const nickHtml = canClick
+          ? `<div class="review-nick" ${clickAttr} style="color:var(--orange)">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>`
+          : `<div class="review-nick">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>`;
         const thumb = r.rating === 1 ? '<div class="review-thumb up">👍</div>' : '<div class="review-thumb down">👎</div>';
         const commentHtml = r.comment
           ? `<div class="review-comment-text">${esc(r.comment)}</div>`
@@ -1854,7 +1859,7 @@ function renderProfile(d) {
           <div class="review-item">
             <div class="review-item-meta">
               ${av}
-              <div class="review-nick">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>
+              ${nickHtml}
               <div class="review-date">${formatReviewDate(r.updated_at)}</div>
               ${thumb}
             </div>

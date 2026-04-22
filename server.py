@@ -1237,9 +1237,11 @@ async def get_profile(account_id: int, request: Request):
         _pool.fetch(
             """
             SELECT r.rating, r.comment, r.updated_at,
-                   u.faceit_id, u.nickname, u.avatar
+                   u.faceit_id, u.nickname, u.avatar,
+                   oc.account_id AS reviewer_account_id
             FROM player_reviews r
             LEFT JOIN users u ON u.faceit_id = r.reviewer_faceit_id
+            LEFT JOIN opendota_cache oc ON oc.faceit_player_id = r.reviewer_faceit_id
             WHERE r.target_account_id = $1
             ORDER BY (r.reviewer_faceit_id = $2) DESC, r.updated_at DESC
             """,
@@ -1271,6 +1273,7 @@ async def get_profile(account_id: int, request: Request):
             "comment": r["comment"],
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             "is_mine": r["faceit_id"] == viewer_faceit_id,
+            "reviewer_account_id": r["reviewer_account_id"],
         }
         for r in reviews_rows
     ]
