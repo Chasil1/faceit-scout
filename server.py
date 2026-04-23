@@ -689,54 +689,51 @@ async def get_smurfs(ids: str = ""):
 
 
 @app.get("/api/winrates")
-async def get_winrates(my_id: int, ids: str = ""):
-    """Return with/against winrates for each requested account ID vs my_id."""
-    if not ids.strip():
+async def get_winrates(my_faceit_id: str = "", ids: str = ""):
+    """Return with/against winrates via FACEIT match history (1 API request)."""
+    if not my_faceit_id or not ids.strip():
         return {}
-    try:
-        target_ids = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
-    except Exception:
-        return {}
-    target_ids = [i for i in target_ids if i != my_id]
+    target_ids = set(x.strip() for x in ids.split(",") if x.strip())
+    target_ids.discard(my_faceit_id)
     if not target_ids:
         return {}
-
-    async def fetch_wl(session, pid, against: int):
-        try:
-            return await opendota_get(
+    try:
+        async with aiohttp.ClientSession() as session:
+            history = await faceit_get(
                 session,
-                f"/players/{my_id}/wl?included_account_id={pid}&against={against}&significant=0",
+                f"/players/{my_faceit_id}/history?game=dota2&limit=100",
             )
-        except Exception:
-            return None
-
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for pid in target_ids:
-            tasks.append(fetch_wl(session, pid, 0))  # with (same team)
-            tasks.append(fetch_wl(session, pid, 1))  # against (enemy team)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    result = {}
-    for i, pid in enumerate(target_ids):
-        w = results[i * 2]
-        v = results[i * 2 + 1]
-        if isinstance(w, Exception): w = None
-        if isinstance(v, Exception): v = None
-        with_wins   = (w.get("win",  0) or 0) if w else 0
-        with_losses = (w.get("lose", 0) or 0) if w else 0
-        vs_wins     = (v.get("win",  0) or 0) if v else 0
-        vs_losses   = (v.get("lose", 0) or 0) if v else 0
-        with_games  = with_wins + with_losses
-        vs_games    = vs_wins + vs_losses
-        if with_games > 0 or vs_games > 0:
-            result[str(pid)] = {
-                "with_games":    with_games,
-                "with_wins":     with_wins,
-                "against_games": vs_games,
-                "against_wins":  vs_wins,
-            }
-    return result
+    except Exception:
+        return {}
+    items = history.get("items") or []
+    result = {pid: {"with_games": 0, "with_wins": 0, "against_games": 0, "against_wins": 0}
+              for pid in target_ids}
+    for match in items:
+        teams = match.get("teams") or {}
+        winner = (match.get("results") or {}).get("winner")
+        my_faction = None
+        for fk in ("faction1", "faction2"):
+            players = (teams.get(fk) or {}).get("players") or []
+            if any(p.get("player_id") == my_faceit_id for p in players):
+                my_faction = fk
+                break
+        if not my_faction:
+            continue
+        my_won = winner == my_faction
+        enemy_faction = "faction2" if my_faction == "faction1" else "faction1"
+        for p in (teams.get(my_faction) or {}).get("players") or []:
+            pid = p.get("player_id")
+            if pid in result:
+                result[pid]["with_games"] += 1
+                if my_won:
+                    result[pid]["with_wins"] += 1
+        for p in (teams.get(enemy_faction) or {}).get("players") or []:
+            pid = p.get("player_id")
+            if pid in result:
+                result[pid]["against_games"] += 1
+                if my_won:
+                    result[pid]["against_wins"] += 1
+    return {k: v for k, v in result.items() if v["with_games"] > 0 or v["against_games"] > 0}
 
 
 @app.post("/api/admin/backfill")

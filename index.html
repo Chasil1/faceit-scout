@@ -1194,7 +1194,7 @@ function renderPlayer(p, delay, isCaptain = false) {
         </div>
       </div>
       <div class="p-right">
-        ${acc ? `<div class="p-wr" data-wr-aid="${esc(acc)}"></div>` : ''}
+        ${acc ? `<div class="p-wr" data-wr-aid="${esc(acc)}" data-wr-fid="${esc(p.player_id || '')}"></div>` : ''}
         ${acc ? `<div class="p-decency" data-decency-aid="${esc(acc)}"></div>` : ''}
         <div class="p-elo">${elo}</div>
         ${p.is_smurf ? `<div class="smurf-real" title="Реальний ранг: ${esc(p.real_rank || '?')}">${rankIcon(p.real_rank_major, p.real_rank)}</div>` : ''}
@@ -1716,22 +1716,22 @@ async function loadBulkDecency() {
 }
 
 async function loadWinrates() {
-  if (!currentUser || !currentUser.dota_account_id) return;
-  const myId = currentUser.dota_account_id;
+  if (!currentUser?.faceit_id) return;
+  const myFaceitId = currentUser.faceit_id;
   const els = [...document.querySelectorAll('[data-wr-aid]')];
   if (!els.length) return;
-  const ids = [...new Set(
-    els.map(e => e.dataset.wrAid).filter(x => x && x !== String(myId))
+  const fids = [...new Set(
+    els.map(e => e.dataset.wrFid).filter(x => x && x !== myFaceitId)
   )];
-  if (!ids.length) return;
+  if (!fids.length) return;
   try {
-    const res = await fetch(`/api/winrates?my_id=${myId}&ids=${ids.join(',')}`);
+    const res = await fetch(`/api/winrates?my_faceit_id=${myFaceitId}&ids=${fids.join(',')}`);
     if (!res.ok) return;
     const map = await res.json();
     els.forEach(el => {
-      const aid = el.dataset.wrAid;
-      if (aid === String(myId)) return;
-      const d = map[aid];
+      const fid = el.dataset.wrFid;
+      if (!fid || fid === myFaceitId) return;
+      const d = map[fid];
       if (!d) return;
       let html = '';
       if (d.with_games > 0) {
@@ -1826,21 +1826,20 @@ async function openProfileModal(accountId, opendotaLink, nickname) {
   modal.style.display = 'flex';
 
   try {
-    const myId = currentUser?.dota_account_id;
-    const fetches = [
-      fetch(`/api/profile/${accountId}`),
-      (myId && myId !== accountId)
-        ? fetch(`/api/winrates?my_id=${myId}&ids=${accountId}`)
-        : Promise.resolve(null),
-    ];
-    const [profileRes, wrRes] = await Promise.all(fetches);
+    const myFaceitId = currentUser?.faceit_id;
+    const [profileRes] = await Promise.all([fetch(`/api/profile/${accountId}`)]);
     if (!profileRes.ok) throw new Error('fetch failed');
     const data = await profileRes.json();
     data._opendota_link = opendotaLink || `https://www.opendota.com/players/${accountId}`;
     data._fallback_nickname = nickname;
-    if (wrRes) {
-      const wrMap = await wrRes.json();
-      data._winrate = wrMap[String(accountId)] || null;
+    if (myFaceitId && data.faceit_player_id && data.faceit_player_id !== myFaceitId) {
+      try {
+        const wrRes = await fetch(`/api/winrates?my_faceit_id=${myFaceitId}&ids=${data.faceit_player_id}`);
+        if (wrRes.ok) {
+          const wrMap = await wrRes.json();
+          data._winrate = wrMap[data.faceit_player_id] || null;
+        }
+      } catch (_) {}
     }
     renderProfile(data);
   } catch (e) {
