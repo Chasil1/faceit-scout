@@ -702,7 +702,7 @@ async def get_winrates(my_id: int, ids: str = ""):
         return {}
     try:
         async with aiohttp.ClientSession() as session:
-            peers = await opendota_get(session, f"/players/{my_id}/peers?date=60")
+            peers = await opendota_get(session, f"/players/{my_id}/peers")
     except Exception:
         return {}
     if not peers or not isinstance(peers, list):
