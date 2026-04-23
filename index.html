@@ -1654,6 +1654,7 @@ async function checkAuth() {
         document.getElementById('user-avatar').style.display = 'block';
       } else {
         document.getElementById('user-avatar').style.display = 'none';
+      }
       // If match is already visible (loaded before auth), fill in winrates now
       if (document.getElementById('match-view')?.style.display !== 'none') {
         loadWinrates();
