@@ -699,13 +699,16 @@ async def get_winrates(my_faceit_id: str = "", ids: str = ""):
         return {}
     try:
         async with aiohttp.ClientSession() as session:
-            history = await faceit_get(
-                session,
-                f"/players/{my_faceit_id}/history?game=dota2&limit=100",
-            )
+            pages = await asyncio.gather(*[
+                faceit_get(session, f"/players/{my_faceit_id}/history?game=dota2&limit=100&offset={off}")
+                for off in range(0, 500, 100)
+            ], return_exceptions=True)
     except Exception:
         return {}
-    items = history.get("items") or []
+    items = []
+    for page in pages:
+        if not isinstance(page, Exception):
+            items.extend(page.get("items") or [])
     result = {pid: {"with_games": 0, "with_wins": 0, "against_games": 0, "against_wins": 0}
               for pid in target_ids}
     for match in items:
