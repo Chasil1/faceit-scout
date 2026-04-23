@@ -1738,13 +1738,13 @@ async function loadWinrates() {
         const pct = Math.round(d.with_wins / d.with_games * 100);
         const cls = pct >= 55 ? 'good' : pct >= 40 ? 'mid' : 'bad';
         const l = d.with_games - d.with_wins;
-        html += `<span class="wr-tag ${cls}" title="${d.with_games} ігор разом: ${d.with_wins}W / ${l}L">з ${pct}%</span>`;
+        html += `<span class="wr-tag ${cls}" title="${d.with_games} ігор разом: ${d.with_wins}W / ${l}L">with ${pct}%</span>`;
       }
       if (d.against_games > 0) {
         const pct = Math.round(d.against_wins / d.against_games * 100);
         const cls = pct >= 55 ? 'good' : pct >= 40 ? 'mid' : 'bad';
         const l = d.against_games - d.against_wins;
-        html += `<span class="wr-tag ${cls}" title="${d.against_games} ігор проти: ${d.against_wins}W / ${l}L">▲ ${pct}%</span>`;
+        html += `<span class="wr-tag ${cls}" title="${d.against_games} ігор проти: ${d.against_wins}W / ${l}L">vs ${pct}%</span>`;
       }
       el.innerHTML = html;
     });
