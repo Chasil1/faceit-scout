@@ -690,32 +690,51 @@ async def get_smurfs(ids: str = ""):
 
 @app.get("/api/winrates")
 async def get_winrates(my_id: int, ids: str = ""):
-    """Return with/against winrates between my_id and each of the requested account IDs."""
+    """Return with/against winrates for each requested account ID vs my_id."""
     if not ids.strip():
         return {}
     try:
-        target_ids = set(int(x.strip()) for x in ids.split(",") if x.strip().isdigit())
+        target_ids = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
     except Exception:
         return {}
-    target_ids.discard(my_id)
+    target_ids = [i for i in target_ids if i != my_id]
     if not target_ids:
         return {}
-    try:
-        async with aiohttp.ClientSession() as session:
-            peers = await opendota_get(session, f"/players/{my_id}/peers?significant=0")
-    except Exception:
-        return {}
-    if not peers or not isinstance(peers, list):
-        return {}
+
+    async def fetch_wl(session, pid, against: int):
+        try:
+            return await opendota_get(
+                session,
+                f"/players/{my_id}/wl?included_account_id={pid}&against={against}&significant=0",
+            )
+        except Exception:
+            return None
+
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for pid in target_ids:
+            tasks.append(fetch_wl(session, pid, 0))  # with (same team)
+            tasks.append(fetch_wl(session, pid, 1))  # against (enemy team)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
     result = {}
-    for p in peers:
-        pid = p.get("account_id")
-        if pid in target_ids:
+    for i, pid in enumerate(target_ids):
+        w = results[i * 2]
+        v = results[i * 2 + 1]
+        if isinstance(w, Exception): w = None
+        if isinstance(v, Exception): v = None
+        with_wins   = (w.get("win",  0) or 0) if w else 0
+        with_losses = (w.get("lose", 0) or 0) if w else 0
+        vs_wins     = (v.get("win",  0) or 0) if v else 0
+        vs_losses   = (v.get("lose", 0) or 0) if v else 0
+        with_games  = with_wins + with_losses
+        vs_games    = vs_wins + vs_losses
+        if with_games > 0 or vs_games > 0:
             result[str(pid)] = {
-                "with_games": p.get("with_games", 0) or 0,
-                "with_wins": p.get("with_win", 0) or 0,
-                "against_games": p.get("against_games", 0) or 0,
-                "against_wins": p.get("against_win", 0) or 0,
+                "with_games":    with_games,
+                "with_wins":     with_wins,
+                "against_games": vs_games,
+                "against_wins":  vs_wins,
             }
     return result
 
