@@ -688,6 +688,38 @@ async def get_smurfs(ids: str = ""):
     return {"smurfs": result}
 
 
+@app.get("/api/winrates")
+async def get_winrates(my_id: int, ids: str = ""):
+    """Return with/against winrates between my_id and each of the requested account IDs."""
+    if not ids.strip():
+        return {}
+    try:
+        target_ids = set(int(x.strip()) for x in ids.split(",") if x.strip().isdigit())
+    except Exception:
+        return {}
+    target_ids.discard(my_id)
+    if not target_ids:
+        return {}
+    try:
+        async with aiohttp.ClientSession() as session:
+            peers = await opendota_get(session, f"/players/{my_id}/peers?date=60")
+    except Exception:
+        return {}
+    if not peers or not isinstance(peers, list):
+        return {}
+    result = {}
+    for p in peers:
+        pid = p.get("account_id")
+        if pid in target_ids:
+            result[str(pid)] = {
+                "with_games": p.get("with_games", 0) or 0,
+                "with_wins": p.get("with_win", 0) or 0,
+                "against_games": p.get("against_games", 0) or 0,
+                "against_wins": p.get("against_win", 0) or 0,
+            }
+    return result
+
+
 @app.post("/api/admin/backfill")
 async def admin_backfill(admin_session: str | None = Cookie(default=None)):
     """Fetch Faceit data for cached players that are missing nicknames."""

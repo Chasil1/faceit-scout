@@ -822,6 +822,19 @@ body {
 
 .player-card { cursor: pointer; }
 
+.p-wr {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; min-width: 36px;
+}
+.wr-tag {
+  font-size: .56rem; font-weight: 700; letter-spacing: .02em;
+  padding: 1px 4px; white-space: nowrap; cursor: default;
+  border-radius: 2px;
+}
+.wr-tag.good { color: #32c850; }
+.wr-tag.bad  { color: #ff5a5a; }
+.wr-tag.mid  { color: #ffd04a; }
+
 .p-decency {
   display: flex; flex-direction: column; align-items: center;
   min-width: 30px; text-align: center; line-height: 1; gap: 1px;
@@ -1181,6 +1194,7 @@ function renderPlayer(p, delay, isCaptain = false) {
         </div>
       </div>
       <div class="p-right">
+        ${acc ? `<div class="p-wr" data-wr-aid="${esc(acc)}"></div>` : ''}
         ${acc ? `<div class="p-decency" data-decency-aid="${esc(acc)}"></div>` : ''}
         <div class="p-elo">${elo}</div>
         ${p.is_smurf ? `<div class="smurf-real" title="Реальний ранг: ${esc(p.real_rank || '?')}">${rankIcon(p.real_rank_major, p.real_rank)}</div>` : ''}
@@ -1424,6 +1438,7 @@ async function pollStatus() {
       // re-render teams with updated cache
       rerenderTeams(data);
       loadBulkDecency();
+      loadWinrates();
     }
 
     // stop polling if match is no longer in draft/live state
@@ -1527,6 +1542,7 @@ async function loadMatch(roomId) {
     renderMatch(data);
     showView('match-view');
     loadBulkDecency();
+    loadWinrates();
 
     // start polling if draft is active
     if (DRAFT_STATUSES.has(data.status)) {
@@ -1599,6 +1615,7 @@ document.getElementById('back-btn').addEventListener('click', () => {
     renderMatch(session.data);
     showView('match-view');
     loadBulkDecency();
+    loadWinrates();
     if (DRAFT_STATUSES.has(session.data.status)) startPolling();
     return;
   }
@@ -1637,6 +1654,9 @@ async function checkAuth() {
         document.getElementById('user-avatar').style.display = 'block';
       } else {
         document.getElementById('user-avatar').style.display = 'none';
+      // If match is already visible (loaded before auth), fill in winrates now
+      if (document.getElementById('match-view')?.style.display !== 'none') {
+        loadWinrates();
       }
     } else {
       currentUser = null;
@@ -1690,6 +1710,42 @@ async function loadBulkDecency() {
       el.innerHTML = `<span class="d-emoji">${emoji}</span><span class="d-pct">${pctStr}</span>`;
       el.className = `p-decency ${cls}`;
       el.title = `Рейтинг порядності: ${pctStr}`;
+    });
+  } catch (_) {}
+}
+
+async function loadWinrates() {
+  if (!currentUser || !currentUser.dota_account_id) return;
+  const myId = currentUser.dota_account_id;
+  const els = [...document.querySelectorAll('[data-wr-aid]')];
+  if (!els.length) return;
+  const ids = [...new Set(
+    els.map(e => e.dataset.wrAid).filter(x => x && x !== String(myId))
+  )];
+  if (!ids.length) return;
+  try {
+    const res = await fetch(`/api/winrates?my_id=${myId}&ids=${ids.join(',')}`);
+    if (!res.ok) return;
+    const map = await res.json();
+    els.forEach(el => {
+      const aid = el.dataset.wrAid;
+      if (aid === String(myId)) return;
+      const d = map[aid];
+      if (!d) return;
+      let html = '';
+      if (d.with_games > 0) {
+        const pct = Math.round(d.with_wins / d.with_games * 100);
+        const cls = pct >= 55 ? 'good' : pct >= 40 ? 'mid' : 'bad';
+        const l = d.with_games - d.with_wins;
+        html += `<span class="wr-tag ${cls}" title="${d.with_games} ігор разом: ${d.with_wins}W / ${l}L">з ${pct}%</span>`;
+      }
+      if (d.against_games > 0) {
+        const pct = Math.round(d.against_wins / d.against_games * 100);
+        const cls = pct >= 55 ? 'good' : pct >= 40 ? 'mid' : 'bad';
+        const l = d.against_games - d.against_wins;
+        html += `<span class="wr-tag ${cls}" title="${d.against_games} ігор проти: ${d.against_wins}W / ${l}L">▲ ${pct}%</span>`;
+      }
+      el.innerHTML = html;
     });
   } catch (_) {}
 }
