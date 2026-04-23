@@ -827,7 +827,7 @@ body {
   gap: 2px; min-width: 36px;
 }
 .wr-tag {
-  font-size: .56rem; font-weight: 700; letter-spacing: .02em;
+  font-size: .68rem; font-weight: 700; letter-spacing: .02em;
   padding: 1px 4px; white-space: nowrap; cursor: default;
   border-radius: 2px;
 }
@@ -1968,8 +1968,10 @@ function renderProfile(d) {
     ).join('')}</div>`;
   })();
 
+  const dotabuffLink = `https://www.dotabuff.com/players/${d.account_id}`;
   const subParts = [
     `<a href="${esc(d._opendota_link)}" target="_blank" rel="noopener">OpenDota ↗</a>`,
+    `<a href="${esc(dotabuffLink)}" target="_blank" rel="noopener">Dotabuff ↗</a>`,
   ];
 
   document.getElementById('profile-body').innerHTML = `
