@@ -1826,11 +1826,22 @@ async function openProfileModal(accountId, opendotaLink, nickname) {
   modal.style.display = 'flex';
 
   try {
-    const res = await fetch(`/api/profile/${accountId}`);
-    if (!res.ok) throw new Error('fetch failed');
-    const data = await res.json();
+    const myId = currentUser?.dota_account_id;
+    const fetches = [
+      fetch(`/api/profile/${accountId}`),
+      (myId && myId !== accountId)
+        ? fetch(`/api/winrates?my_id=${myId}&ids=${accountId}`)
+        : Promise.resolve(null),
+    ];
+    const [profileRes, wrRes] = await Promise.all(fetches);
+    if (!profileRes.ok) throw new Error('fetch failed');
+    const data = await profileRes.json();
     data._opendota_link = opendotaLink || `https://www.opendota.com/players/${accountId}`;
     data._fallback_nickname = nickname;
+    if (wrRes) {
+      const wrMap = await wrRes.json();
+      data._winrate = wrMap[String(accountId)] || null;
+    }
     renderProfile(data);
   } catch (e) {
     body.innerHTML = '<div class="profile-loading">Не вдалося завантажити профіль.</div>';
@@ -1938,6 +1949,16 @@ function renderProfile(d) {
     if (d.is_smurf && d.real_rank) items.push({ label: 'Смурф ранг', value: d.real_rank });
     if (d.faceit_elo) items.push({ label: 'Faceit ELO', value: d.faceit_elo });
     if (d.faceit_winrate != null) items.push({ label: 'Вінрейт Faceit', value: `${d.faceit_winrate}%` });
+    if (d._winrate?.with_games > 0) {
+      const pct = Math.round(d._winrate.with_wins / d._winrate.with_games * 100);
+      const l = d._winrate.with_games - d._winrate.with_wins;
+      items.push({ label: 'With (разом)', value: `${pct}% · ${d._winrate.with_wins}W / ${l}L` });
+    }
+    if (d._winrate?.against_games > 0) {
+      const pct = Math.round(d._winrate.against_wins / d._winrate.against_games * 100);
+      const l = d._winrate.against_games - d._winrate.against_wins;
+      items.push({ label: 'Vs (проти)', value: `${pct}% · ${d._winrate.against_wins}W / ${l}L` });
+    }
     if (d.position) {
       const roles = [d.position, d.position2].filter(Boolean).join(' / ');
       items.push({ label: 'Ролі', value: roles });
