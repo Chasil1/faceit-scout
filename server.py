@@ -1257,6 +1257,7 @@ async def bulk_decency(ids: str = ""):
 class ReviewCreate(BaseModel):
     rating: int
     comment: str | None = None
+    is_anonymous: bool = False
 
 
 def _compute_decency(likes: int, dislikes: int) -> float:
@@ -1287,7 +1288,7 @@ async def get_profile(account_id: int, request: Request):
         ),
         _pool.fetch(
             """
-            SELECT r.rating, r.comment, r.updated_at,
+            SELECT r.rating, r.comment, r.updated_at, r.is_anonymous,
                    u.faceit_id, u.nickname, u.avatar,
                    oc.account_id AS reviewer_account_id
             FROM player_reviews r
@@ -1306,6 +1307,7 @@ async def get_profile(account_id: int, request: Request):
 
     my_review = None
     my_comment = None
+    my_anonymous = False
     viewer_dota_id = None
     if viewer:
         viewer_dota_id = await get_user_dota_account_id(viewer_faceit_id)
@@ -1313,21 +1315,24 @@ async def get_profile(account_id: int, request: Request):
             if r["faceit_id"] == viewer_faceit_id:
                 my_review = r["rating"]
                 my_comment = r["comment"]
+                my_anonymous = bool(r["is_anonymous"])
                 break
 
-    reviews = [
-        {
-            "faceit_id": r["faceit_id"],
-            "nickname": r["nickname"] or "Unknown",
-            "avatar": r["avatar"],
+    reviews = []
+    for r in reviews_rows:
+        is_mine = r["faceit_id"] == viewer_faceit_id
+        hide = r["is_anonymous"] and not is_mine
+        reviews.append({
+            "faceit_id": r["faceit_id"] if not hide else None,
+            "nickname": (r["nickname"] or "Unknown") if not hide else "Анонімний гравець",
+            "avatar": r["avatar"] if not hide else None,
             "rating": r["rating"],
             "comment": r["comment"],
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
-            "is_mine": r["faceit_id"] == viewer_faceit_id,
-            "reviewer_account_id": r["reviewer_account_id"],
-        }
-        for r in reviews_rows
-    ]
+            "is_mine": is_mine,
+            "is_anonymous": r["is_anonymous"],
+            "reviewer_account_id": r["reviewer_account_id"] if not hide else None,
+        })
 
     rank_major, rank_lbl = (
         rank_label(cache_row["rank_tier"], cache_row["leaderboard_rank"])
@@ -1381,6 +1386,7 @@ async def get_profile(account_id: int, request: Request):
         "reviews": reviews,
         "my_review": my_review,
         "my_comment": my_comment,
+        "my_anonymous": my_anonymous,
         "can_review": bool(viewer) and viewer_dota_id != account_id and (
             not cache_row or cache_row["faceit_player_id"] != viewer_faceit_id
         ),
@@ -1406,15 +1412,17 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
     comment = (body.comment or "").strip() or None
     await _pool.execute(
         """
-        INSERT INTO player_reviews (reviewer_faceit_id, target_account_id, rating, comment, updated_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO player_reviews (reviewer_faceit_id, target_account_id, rating, comment, is_anonymous, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
         ON CONFLICT (reviewer_faceit_id, target_account_id)
-        DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
+        DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment,
+                      is_anonymous = EXCLUDED.is_anonymous, updated_at = NOW()
         """,
         viewer["faceit_id"],
         account_id,
         body.rating,
         comment,
+        body.is_anonymous,
     )
     return {"ok": True}
 
@@ -1513,6 +1521,7 @@ async def admin_list_reviews(admin_session: str | None = Cookie(default=None)):
     rows = await _pool.fetch(
         """
         SELECT pr.reviewer_faceit_id, pr.target_account_id, pr.rating, pr.comment, pr.updated_at,
+               pr.is_anonymous,
                u.nickname AS reviewer_nickname, u.avatar AS reviewer_avatar,
                oc.nickname AS target_nickname
         FROM player_reviews pr
@@ -1531,6 +1540,7 @@ async def admin_list_reviews(admin_session: str | None = Cookie(default=None)):
             "target_nickname": r["target_nickname"],
             "rating": r["rating"],
             "comment": r["comment"],
+            "is_anonymous": r["is_anonymous"],
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
         }
         for r in rows

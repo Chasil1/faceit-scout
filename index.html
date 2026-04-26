@@ -811,6 +811,8 @@ body {
 .review-textarea:focus { border-color: #555; }
 .review-textarea::placeholder { color: #555; }
 .review-actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; flex-wrap: wrap; }
+.review-anon-label { display: flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--dim); cursor: pointer; user-select: none; }
+.review-anon-label input { accent-color: var(--orange); cursor: pointer; }
 
 .profile-stat-row {
   display: flex; gap: 1.2rem; flex-wrap: wrap;
@@ -1876,6 +1878,7 @@ function renderProfile(d) {
     </div>`;
 
   pendingRating = d.my_review ?? null;
+  const myAnonymous = d.my_anonymous ?? false;
 
   let btnsHtml;
   if (d.is_self) {
@@ -1903,6 +1906,9 @@ function renderProfile(d) {
       <div class="review-form">
         <textarea id="review-comment" class="review-textarea" placeholder="Коментар (необов'язково)" maxlength="500">${esc(existingComment)}</textarea>
         <div class="review-actions">
+          <label class="review-anon-label">
+            <input type="checkbox" id="review-anon" ${myAnonymous ? 'checked' : ''}> Залишити анонімно
+          </label>
           <button class="review-btn" style="background:var(--orange);border-color:var(--orange);color:#111" onclick="submitReview()">Зберегти відгук</button>
         </div>
       </div>`;
@@ -1915,9 +1921,11 @@ function renderProfile(d) {
         const av = r.avatar
           ? `<img class="review-avatar" src="${esc(r.avatar)}" alt="" onerror="this.style.display='none'" ${clickAttr}>`
           : `<div class="review-avatar" ${clickAttr}></div>`;
+        const mineLabel = r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : '';
+        const anonLabel = r.is_anonymous && r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">[анонімно]</span>' : '';
         const nickHtml = canClick
-          ? `<div class="review-nick" ${clickAttr} style="color:var(--orange)">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>`
-          : `<div class="review-nick">${esc(r.nickname)}${r.is_mine ? ' <span style="color:var(--dim);font-size:.7rem">(ти)</span>' : ''}</div>`;
+          ? `<div class="review-nick" ${clickAttr} style="color:var(--orange)">${esc(r.nickname)}${mineLabel}${anonLabel}</div>`
+          : `<div class="review-nick">${esc(r.nickname)}${mineLabel}${anonLabel}</div>`;
         const thumb = r.rating === 1 ? '<div class="review-thumb up">👍</div>' : '<div class="review-thumb down">👎</div>';
         const commentHtml = r.comment
           ? `<div class="review-comment-text">${esc(r.comment)}</div>`
@@ -2018,11 +2026,12 @@ async function submitReview() {
   if (!currentProfileAccount) return;
   if (pendingRating == null) { alert('Оберіть 👍 або 👎'); return; }
   const comment = (document.getElementById('review-comment')?.value || '').trim();
+  const isAnonymous = document.getElementById('review-anon')?.checked ?? false;
   try {
     const res = await fetch(`/api/profile/${currentProfileAccount}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating: pendingRating, comment: comment || null }),
+      body: JSON.stringify({ rating: pendingRating, comment: comment || null, is_anonymous: isAnonymous }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

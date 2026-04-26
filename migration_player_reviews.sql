@@ -14,3 +14,6 @@ CREATE INDEX IF NOT EXISTS idx_player_reviews_target ON player_reviews(target_ac
 
 -- Safe upgrade if table already exists without comment column
 ALTER TABLE player_reviews ADD COLUMN IF NOT EXISTS comment TEXT;
+
+-- Add anonymous flag (default not anonymous, preserves existing reviews)
+ALTER TABLE player_reviews ADD COLUMN IF NOT EXISTS is_anonymous BOOLEAN NOT NULL DEFAULT FALSE;

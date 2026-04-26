@@ -874,6 +874,9 @@ function renderReviews() {
     const targetLink = rv.target_account_id
       ? `<span class="rv-player-link" data-acc="${rv.target_account_id}" style="color:var(--orange);cursor:pointer;font-weight:700">${esc(rv.target_nickname || rv.target_account_id)}</span>`
       : esc(rv.target_nickname || rv.target_account_id);
+    const anonBadge = rv.is_anonymous
+      ? ' <span style="font-size:.7rem;color:var(--dim);background:#2a2a2a;border:1px solid #3a3a3a;padding:.1rem .35rem;border-radius:3px">анонімно</span>'
+      : '';
     const reviewerText = esc(rv.reviewer_nickname || rv.reviewer_faceit_id);
     const commentHtml = rv.comment
       ? `<div class="rv-comment">${esc(rv.comment)}</div>`
@@ -883,7 +886,7 @@ function renderReviews() {
         <div class="rv-rating">${ratingIcon}</div>
         <div class="rv-body">
           <div class="rv-players">
-            <span>${reviewerText}</span>
+            <span>${reviewerText}${anonBadge}</span>
             <span style="color:var(--muted)">→</span>
             ${targetLink}
           </div>
