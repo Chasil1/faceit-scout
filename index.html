@@ -1543,6 +1543,7 @@ async function loadMatch(roomId) {
     saveSession(roomId, data);
     renderMatch(data);
     showView('match-view');
+    history.pushState({}, '', '/' + roomId);
     loadBulkDecency();
     loadWinrates();
 
@@ -1552,6 +1553,7 @@ async function loadMatch(roomId) {
     }
   } catch (e) {
     showView('input-view');
+    history.pushState({}, '', '/');
     currentRoomId = null;
     errEl.textContent = `Помилка: ${e.message}`;
     errEl.classList.add('visible');
@@ -1575,6 +1577,7 @@ document.getElementById('back-btn').addEventListener('click', () => {
   stopPolling();
   currentRoomId = null;
   clearSession();
+  history.pushState({}, '', '/');
   showView('input-view');
 });
 
@@ -1619,6 +1622,12 @@ document.getElementById('back-btn').addEventListener('click', () => {
     loadBulkDecency();
     loadWinrates();
     if (DRAFT_STATUSES.has(session.data.status)) startPolling();
+    return;
+  }
+  const pathRoom = window.location.pathname.slice(1);
+  if (pathRoom) {
+    document.getElementById('room-input').value = pathRoom;
+    loadMatch(pathRoom);
     return;
   }
   const p = new URLSearchParams(window.location.search);

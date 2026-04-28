@@ -1593,6 +1593,12 @@ async def admin_set_smurf(account_id: int, body: SmurfUpdate, admin_session: str
     return {"ok": True, "account_id": account_id, "is_smurf": body.is_smurf}
 
 
+@app.get("/{path}")
+async def catch_all(path: str):
+    with open(os.path.join(BASE_PATH, "index.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
 if __name__ == "__main__":
     import uvicorn
 
