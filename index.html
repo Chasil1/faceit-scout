@@ -1583,8 +1583,11 @@ document.getElementById('back-btn').addEventListener('click', () => {
 
 // ── Auto-load: restore from session (F5) or launcher (?room=) ──────────
 (async function () {
+  const pathRoom = window.location.pathname.slice(1);
   const session = loadSession();
-  if (session) {
+
+  // Use cached session only when it matches the current URL room
+  if (session && (!pathRoom || session.roomId === pathRoom)) {
     currentRoomId = session.roomId;
     playerCache   = session.cache;
 
@@ -1624,7 +1627,6 @@ document.getElementById('back-btn').addEventListener('click', () => {
     if (DRAFT_STATUSES.has(session.data.status)) startPolling();
     return;
   }
-  const pathRoom = window.location.pathname.slice(1);
   if (pathRoom) {
     document.getElementById('room-input').value = pathRoom;
     loadMatch(pathRoom);
