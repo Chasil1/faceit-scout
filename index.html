@@ -1781,6 +1781,8 @@ function openLoginPopup() {
 }
 
 window.addEventListener('message', async (evt) => {
+  console.log('[auth] message received from:', evt.origin, evt.data);
+
   // Case 1: our /auth/done page notifies us after server-side callback
   if (evt.origin === location.origin && evt.data && evt.data.type === 'auth_done') {
     if (_loginPopup && !_loginPopup.closed) _loginPopup.close();
@@ -1797,6 +1799,7 @@ window.addEventListener('message', async (evt) => {
       code  = d && d.code;
       state = d && d.state;
     } catch (_) {}
+    console.log('[auth] faceit postMessage code:', code, 'state:', state);
     if (!code) return;
     try {
       const res = await fetch('/api/auth/exchange_code', {
@@ -1804,12 +1807,16 @@ window.addEventListener('message', async (evt) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, state: state || '' }),
       });
+      console.log('[auth] exchange_code status:', res.status);
       if (res.ok) {
         if (_loginPopup && !_loginPopup.closed) _loginPopup.close();
         _loginPopup = null;
         await checkAuth();
+      } else {
+        const err = await res.text();
+        console.error('[auth] exchange_code error:', err);
       }
-    } catch (e) { console.error('auth exchange failed', e); }
+    } catch (e) { console.error('[auth] exchange failed', e); }
   }
 });
 
