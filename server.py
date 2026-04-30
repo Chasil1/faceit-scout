@@ -1528,7 +1528,6 @@ async def admin_list_reviews(admin_session: str | None = Cookie(default=None)):
         LEFT JOIN users u ON u.faceit_id = pr.reviewer_faceit_id
         LEFT JOIN opendota_cache oc ON oc.account_id = pr.target_account_id
         ORDER BY pr.updated_at DESC
-        LIMIT 500
         """
     )
     return {"reviews": [
