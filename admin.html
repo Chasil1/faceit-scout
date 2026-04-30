@@ -67,6 +67,19 @@
   cursor: pointer; white-space: nowrap;
 }
 .rv-del-btn:hover { border-color: var(--red); color: var(--red); }
+
+.pagination {
+  display: flex; align-items: center; gap: .6rem; margin-top: .9rem;
+  justify-content: center;
+}
+.page-btn {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+  padding: .35rem .85rem; font-family: inherit; font-size: .8rem; font-weight: 600;
+  letter-spacing: .04em; cursor: pointer;
+}
+.page-btn:hover:not(:disabled) { border-color: var(--orange); color: var(--orange); }
+.page-btn:disabled { opacity: .35; cursor: default; }
+.page-info { font-size: .8rem; color: var(--dim); min-width: 110px; text-align: center; }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -453,6 +466,7 @@ td.nick a:hover { color: var(--orange); }
 <div class="tab-panel" id="tab-reviews">
   <div id="reviews-state" class="state">Завантаження…</div>
   <div class="reviews-list" id="reviews-list"></div>
+  <div class="pagination" id="reviews-pagination"></div>
 </div>
 
 <!-- Player profile modal -->
@@ -834,21 +848,43 @@ async function reportDismiss(reportId) {
 }
 
 // ── Reviews ────────────────────────────────────────────────────────────
+const REVIEWS_PER_PAGE = 100;
 let reviewsData = [];
+let reviewsPage = 0;
 
 async function loadReviews() {
   document.getElementById('reviews-state').style.display = '';
   document.getElementById('reviews-state').textContent = 'Завантаження…';
   document.getElementById('reviews-list').innerHTML = '';
+  document.getElementById('reviews-pagination').innerHTML = '';
   try {
     const r = await fetch('/api/admin/reviews');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     reviewsData = data.reviews || [];
+    reviewsPage = 0;
     renderReviews();
   } catch (e) {
     document.getElementById('reviews-state').textContent = 'Помилка: ' + e.message;
   }
+}
+
+function renderReviewsPagination() {
+  const el = document.getElementById('reviews-pagination');
+  const totalPages = Math.ceil(reviewsData.length / REVIEWS_PER_PAGE);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  const from = reviewsPage * REVIEWS_PER_PAGE + 1;
+  const to = Math.min((reviewsPage + 1) * REVIEWS_PER_PAGE, reviewsData.length);
+  el.innerHTML = `
+    <button class="page-btn" ${reviewsPage === 0 ? 'disabled' : ''} onclick="goReviewsPage(${reviewsPage - 1})">← Попередня</button>
+    <span class="page-info">${from}–${to} з ${reviewsData.length}</span>
+    <button class="page-btn" ${reviewsPage >= totalPages - 1 ? 'disabled' : ''} onclick="goReviewsPage(${reviewsPage + 1})">Наступна →</button>`;
+}
+
+function goReviewsPage(page) {
+  reviewsPage = page;
+  renderReviews();
+  document.getElementById('tab-reviews').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderReviews() {
@@ -865,11 +901,16 @@ function renderReviews() {
     document.getElementById('reviews-state').style.display = '';
     document.getElementById('reviews-state').textContent = 'Відгуків немає.';
     list.innerHTML = '';
+    renderReviewsPagination();
     return;
   }
   document.getElementById('reviews-state').style.display = 'none';
 
-  list.innerHTML = reviewsData.map((rv, idx) => {
+  const totalPages = Math.ceil(reviewsData.length / REVIEWS_PER_PAGE);
+  reviewsPage = Math.max(0, Math.min(reviewsPage, totalPages - 1));
+  const pageData = reviewsData.slice(reviewsPage * REVIEWS_PER_PAGE, (reviewsPage + 1) * REVIEWS_PER_PAGE);
+
+  list.innerHTML = pageData.map((rv, idx) => {
     const ratingIcon = rv.rating === 1 ? '👍' : '👎';
     const targetLink = rv.target_account_id
       ? `<span class="rv-player-link" data-acc="${rv.target_account_id}" style="color:var(--orange);cursor:pointer;font-weight:700">${esc(rv.target_nickname || rv.target_account_id)}</span>`
@@ -907,6 +948,8 @@ function renderReviews() {
   list.querySelectorAll('.rv-player-link').forEach(el => {
     el.onclick = () => openProfileModal(+el.dataset.acc);
   });
+
+  renderReviewsPagination();
 }
 
 async function deleteReview(reviewerFaceitId, targetAccountId) {
