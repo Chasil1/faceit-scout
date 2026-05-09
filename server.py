@@ -461,22 +461,24 @@ async def _toxicity_worker():
             is_toxic = False
             checked = False
 
-            # Try Gemini with retries
-            for attempt in range(4):
-                try:
-                    is_toxic = await check_toxicity_gemini(comment)
-                    checked = True
-                    break
-                except _RateLimited:
-                    wait = 15 * (attempt + 1)
-                    log.warning("Gemini rate limited, retrying in %ds (attempt %d/4)", wait, attempt + 1)
-                    await asyncio.sleep(wait)
-
-            # Fallback to OpenRouter if Gemini failed all retries
-            if not checked:
-                log.info("Gemini unavailable, falling back to OpenRouter for %s/%s", reviewer_faceit_id, target_account_id)
+            # Primary: OpenRouter
+            try:
                 is_toxic = await check_toxicity_openrouter(comment)
                 checked = True
+            except Exception as e:
+                log.warning("OpenRouter failed, falling back to Gemini: %s", e)
+
+            # Fallback: Gemini with retries
+            if not checked:
+                for attempt in range(4):
+                    try:
+                        is_toxic = await check_toxicity_gemini(comment)
+                        checked = True
+                        break
+                    except _RateLimited:
+                        wait = 15 * (attempt + 1)
+                        log.warning("Gemini rate limited, retrying in %ds (attempt %d/4)", wait, attempt + 1)
+                        await asyncio.sleep(wait)
 
             if _pool and checked:
                 await _pool.execute(
