@@ -1706,6 +1706,93 @@ async def admin_delete_review(
     return {"ok": True}
 
 
+class ToxicityOverride(BaseModel):
+    override: bool | None = None
+
+
+@app.get("/api/admin/users/search")
+async def admin_search_users(
+    q: str = "",
+    role: str = "reviewer",
+    admin_session: str | None = Cookie(default=None),
+):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool or len(q) < 2:
+        return {"users": []}
+    if role == "reviewer":
+        rows = await _pool.fetch(
+            "SELECT faceit_id, nickname, avatar FROM users WHERE nickname ILIKE $1 LIMIT 20",
+            f"%{q}%",
+        )
+        return {"users": [{"faceit_id": r["faceit_id"], "nickname": r["nickname"], "avatar": r["avatar"]} for r in rows]}
+    rows = await _pool.fetch(
+        "SELECT account_id, nickname, avatar FROM opendota_cache WHERE nickname ILIKE $1 LIMIT 20",
+        f"%{q}%",
+    )
+    return {"users": [{"account_id": r["account_id"], "nickname": r["nickname"], "avatar": r["avatar"]} for r in rows]}
+
+
+@app.patch("/api/admin/reviews/{reviewer_faceit_id}/{target_account_id}/toxicity")
+async def admin_set_toxicity(
+    reviewer_faceit_id: str,
+    target_account_id: int,
+    body: ToxicityOverride,
+    admin_session: str | None = Cookie(default=None),
+):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    result = await _pool.execute(
+        "UPDATE player_reviews SET is_toxic_override = $3 WHERE reviewer_faceit_id = $1 AND target_account_id = $2",
+        reviewer_faceit_id,
+        target_account_id,
+        body.override,
+    )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="review not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{faceit_id}/ban")
+async def admin_ban_user(
+    faceit_id: str,
+    admin_session: str | None = Cookie(default=None),
+):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    result = await _pool.execute(
+        "UPDATE users SET is_banned = TRUE, banned_at = NOW() WHERE faceit_id = $1",
+        faceit_id,
+    )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="user not found")
+    deleted = await _pool.execute(
+        "DELETE FROM player_reviews WHERE reviewer_faceit_id = $1",
+        faceit_id,
+    )
+    deleted_count = int(deleted.split()[-1])
+    return {"ok": True, "deleted_reviews": deleted_count}
+
+
+@app.post("/api/admin/reviews/reanalyze")
+async def admin_reanalyze_reviews(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _pool:
+        raise HTTPException(status_code=503, detail="db unavailable")
+    rows = await _pool.fetch(
+        "SELECT reviewer_faceit_id, target_account_id, comment FROM player_reviews "
+        "WHERE comment IS NOT NULL AND is_toxic_override IS NULL"
+    )
+    for row in rows:
+        await _toxicity_queue.put((row["reviewer_faceit_id"], row["target_account_id"], row["comment"]))
+    return {"ok": True, "queued": len(rows)}
+
+
 @app.post("/api/admin/smurf/{account_id}")
 async def admin_set_smurf(account_id: int, body: SmurfUpdate, admin_session: str | None = Cookie(default=None)):
     if not _is_admin(admin_session):
