@@ -1500,7 +1500,8 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
         VALUES ($1, $2, $3, $4, $5, NOW())
         ON CONFLICT (reviewer_faceit_id, target_account_id)
         DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment,
-                      is_anonymous = EXCLUDED.is_anonymous, updated_at = NOW()
+                      is_anonymous = EXCLUDED.is_anonymous, updated_at = NOW(),
+                      is_toxic = FALSE, is_toxic_override = NULL
         """,
         viewer["faceit_id"],
         account_id,
@@ -1508,6 +1509,8 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
         comment,
         body.is_anonymous,
     )
+    if comment:
+        await _toxicity_queue.put((viewer["faceit_id"], account_id, comment))
     return {"ok": True}
 
 
