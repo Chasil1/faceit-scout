@@ -45,7 +45,7 @@ _pool: asyncpg.Pool | None = None
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCV839C66pP4WY2LfFRfxKfYHTW2RZTAjI")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.0-flash-latest:generateContent"
+    "gemini-3-flash-preview:generateContent"
 )
 _toxicity_queue: asyncio.Queue = asyncio.Queue()
 
