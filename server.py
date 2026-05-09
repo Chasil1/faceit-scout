@@ -45,8 +45,10 @@ _pool: asyncpg.Pool | None = None
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCS1wf_Z5jreyJSZXpOdZgl4CfRNbSgZ48")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-3-flash-preview:generateContent"
+    "gemini-3.1-flash-lite:generateContent"
 )
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _toxicity_queue: asyncio.Queue = asyncio.Queue()
 _toxicity_processed: int = 0
 _toxicity_total: int = 0
@@ -405,6 +407,49 @@ async def check_toxicity_gemini(comment: str) -> bool:
         return False
 
 
+async def check_toxicity_openrouter(comment: str) -> bool:
+    if not OPENROUTER_API_KEY:
+        log.error("OpenRouter API key not configured")
+        return False
+    prompt = (
+        "Analyze this game comment (Dota 2 / FACEIT) and determine if it is toxic.\n"
+        "Toxic means: insults, threats, racist/sexist language, systematic harassment, calls to violence.\n\n"
+        f'Comment: "{comment}"\n\n'
+        'Reply ONLY in JSON format: {"toxic": true} or {"toxic": false}'
+    )
+    payload = {
+        "model": "openrouter/owl-alpha",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 20,
+        "temperature": 0,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                OPENROUTER_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    log.error("OpenRouter API error %s: %s", resp.status, body[:200])
+                    return False
+                data = await resp.json()
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                match = re.search(r'\{[^}]*"toxic"\s*:\s*(true|false)[^}]*\}', text)
+                if not match:
+                    log.error("OpenRouter: could not parse toxic JSON from: %r", text)
+                    return False
+                return json.loads(match.group(0)).get("toxic", False)
+    except Exception as e:
+        log.error("OpenRouter toxicity check failed: %s", e)
+        return False
+
+
 async def _toxicity_worker():
     global _toxicity_processed
     while True:
@@ -414,21 +459,32 @@ async def _toxicity_worker():
             reviewer_faceit_id, target_account_id, comment = item
 
             is_toxic = False
+            checked = False
+
+            # Try Gemini with retries
             for attempt in range(4):
                 try:
                     is_toxic = await check_toxicity_gemini(comment)
+                    checked = True
                     break
                 except _RateLimited:
                     wait = 15 * (attempt + 1)
                     log.warning("Gemini rate limited, retrying in %ds (attempt %d/4)", wait, attempt + 1)
                     await asyncio.sleep(wait)
 
-            if _pool:
+            # Fallback to OpenRouter if Gemini failed all retries
+            if not checked:
+                log.info("Gemini unavailable, falling back to OpenRouter for %s/%s", reviewer_faceit_id, target_account_id)
+                is_toxic = await check_toxicity_openrouter(comment)
+                checked = True
+
+            if _pool and checked:
                 await _pool.execute(
                     """
-                    UPDATE player_reviews SET is_toxic = $3
+                    UPDATE player_reviews
+                    SET is_toxicity_checked = TRUE,
+                        is_toxic = CASE WHEN is_toxic_override IS NULL THEN $3 ELSE is_toxic END
                     WHERE reviewer_faceit_id = $1 AND target_account_id = $2
-                      AND is_toxic_override IS NULL
                     """,
                     reviewer_faceit_id,
                     target_account_id,
@@ -1545,7 +1601,7 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
         ON CONFLICT (reviewer_faceit_id, target_account_id)
         DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment,
                       is_anonymous = EXCLUDED.is_anonymous, updated_at = NOW(),
-                      is_toxic = FALSE, is_toxic_override = NULL
+                      is_toxic = FALSE, is_toxic_override = NULL, is_toxicity_checked = FALSE
         """,
         viewer["faceit_id"],
         account_id,
@@ -1826,7 +1882,7 @@ async def admin_reanalyze_reviews(admin_session: str | None = Cookie(default=Non
             break
     rows = await _pool.fetch(
         "SELECT reviewer_faceit_id, target_account_id, comment FROM player_reviews "
-        "WHERE comment IS NOT NULL"
+        "WHERE comment IS NOT NULL AND is_toxicity_checked = FALSE"
     )
     _toxicity_processed = 0
     _toxicity_total = len(rows)
