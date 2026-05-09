@@ -1632,7 +1632,7 @@ async def admin_list_reviews(
 
     if toxic_only:
         conditions.append(
-            "(pr.is_toxic_override IS NULL AND pr.is_toxic = TRUE) OR pr.is_toxic_override = TRUE"
+            "((pr.is_toxic_override IS NULL AND pr.is_toxic = TRUE) OR pr.is_toxic_override = TRUE)"
         )
     if reviewer_faceit_id:
         params.append(reviewer_faceit_id)
@@ -1766,17 +1766,19 @@ async def admin_ban_user(
         raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
-    result = await _pool.execute(
-        "UPDATE users SET is_banned = TRUE, banned_at = NOW() WHERE faceit_id = $1",
-        faceit_id,
-    )
-    if result.endswith(" 0"):
-        raise HTTPException(status_code=404, detail="user not found")
-    deleted = await _pool.execute(
-        "DELETE FROM player_reviews WHERE reviewer_faceit_id = $1",
-        faceit_id,
-    )
-    deleted_count = int(deleted.split()[-1])
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            result = await conn.execute(
+                "UPDATE users SET is_banned = TRUE, banned_at = NOW() WHERE faceit_id = $1",
+                faceit_id,
+            )
+            if result.endswith(" 0"):
+                raise HTTPException(status_code=404, detail="user not found")
+            deleted = await conn.execute(
+                "DELETE FROM player_reviews WHERE reviewer_faceit_id = $1",
+                faceit_id,
+            )
+    deleted_count = int(deleted.split()[-1]) if deleted else 0
     return {"ok": True, "deleted_reviews": deleted_count}
 
 
