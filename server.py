@@ -1126,6 +1126,14 @@ async def auth_callback(
                 user_data.get("avatar"),
             )
 
+            if _pool:
+                ban_row = await _pool.fetchrow(
+                    "SELECT is_banned FROM users WHERE faceit_id = $1",
+                    user_data["player_id"],
+                )
+                if ban_row and ban_row["is_banned"]:
+                    return RedirectResponse("/?auth_error=banned")
+
             # Create JWT
             jwt_token = create_jwt_token(user_data)
 
@@ -1240,6 +1248,14 @@ async def exchange_code(
                 user_data["nickname"],
                 user_data.get("avatar"),
             )
+
+            if _pool:
+                ban_row = await _pool.fetchrow(
+                    "SELECT is_banned FROM users WHERE faceit_id = $1",
+                    user_data["player_id"],
+                )
+                if ban_row and ban_row["is_banned"]:
+                    raise HTTPException(status_code=403, detail="banned")
 
             jwt_token = create_jwt_token(user_data)
             response = JSONResponse({"ok": True})
