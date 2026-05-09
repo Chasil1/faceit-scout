@@ -375,11 +375,20 @@ async def check_toxicity_gemini(comment: str) -> bool:
                     log.error("Gemini API error %s", resp.status)
                     return False
                 data = await resp.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                text = text.strip("`").strip()
-                if text.startswith("json"):
-                    text = text[4:].strip()
-                return bool(json.loads(text).get("toxic", False))
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    log.error("Gemini: no candidates in response: %s", data)
+                    return False
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    log.error("Gemini: no parts in candidate: %s", candidates[0])
+                    return False
+                text = parts[0].get("text", "")
+                match = re.search(r'\{[^}]*"toxic"\s*:\s*(true|false)[^}]*\}', text)
+                if not match:
+                    log.error("Gemini: could not parse toxic JSON from: %r", text)
+                    return False
+                return json.loads(match.group(0)).get("toxic", False)
     except Exception as e:
         log.error("Gemini toxicity check failed: %s", e)
         return False
@@ -387,8 +396,10 @@ async def check_toxicity_gemini(comment: str) -> bool:
 
 async def _toxicity_worker():
     while True:
+        item = None
         try:
-            reviewer_faceit_id, target_account_id, comment = await _toxicity_queue.get()
+            item = await _toxicity_queue.get()
+            reviewer_faceit_id, target_account_id, comment = item
             is_toxic = await check_toxicity_gemini(comment)
             if _pool:
                 await _pool.execute(
@@ -407,10 +418,8 @@ async def _toxicity_worker():
         except Exception as e:
             log.error("toxicity worker error: %s", e)
         finally:
-            try:
+            if item is not None:
                 _toxicity_queue.task_done()
-            except Exception:
-                pass
 
 
 @asynccontextmanager
