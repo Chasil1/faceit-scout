@@ -42,6 +42,13 @@ JWT_EXPIRE_DAYS = 30
 
 _pool: asyncpg.Pool | None = None
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCV839C66pP4WY2LfFRfxKfYHTW2RZTAjI")
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "gemini-2.0-flash-latest:generateContent"
+)
+_toxicity_queue: asyncio.Queue = asyncio.Queue()
+
 RANK_NAMES = {
     1: "Herald",
     2: "Guardian",
@@ -344,6 +351,68 @@ async def fetch_player(session, roster_entry):
     return result
 
 
+async def check_toxicity_gemini(comment: str) -> bool:
+    prompt = (
+        "Проаналізуй наступний коментар у грі (Dota 2 / FACEIT) і визнач чи є він токсичним.\n"
+        "Токсичний коментар містить: образи, погрози, расистські/сексистські висловлювання, "
+        "систематичне приниження, заклики до насильства.\n\n"
+        f'Коментар: "{comment}"\n\n'
+        'Відповідь лише у форматі JSON: {"toxic": true} або {"toxic": false}'
+    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 20},
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    log.error("Gemini API error %s", resp.status)
+                    return False
+                data = await resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                text = text.strip("`").strip()
+                if text.startswith("json"):
+                    text = text[4:].strip()
+                return bool(json.loads(text).get("toxic", False))
+    except Exception as e:
+        log.error("Gemini toxicity check failed: %s", e)
+        return False
+
+
+async def _toxicity_worker():
+    while True:
+        try:
+            reviewer_faceit_id, target_account_id, comment = await _toxicity_queue.get()
+            is_toxic = await check_toxicity_gemini(comment)
+            if _pool:
+                await _pool.execute(
+                    """
+                    UPDATE player_reviews SET is_toxic = $3
+                    WHERE reviewer_faceit_id = $1 AND target_account_id = $2
+                      AND is_toxic_override IS NULL
+                    """,
+                    reviewer_faceit_id,
+                    target_account_id,
+                    is_toxic,
+                )
+                log.info("toxicity %s/%s -> %s", reviewer_faceit_id, target_account_id, is_toxic)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            log.error("toxicity worker error: %s", e)
+        finally:
+            try:
+                _toxicity_queue.task_done()
+            except Exception:
+                pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
@@ -360,7 +429,13 @@ async def lifespan(app: FastAPI):
             _pool = None
     else:
         log.warning("DATABASE_URL not set — caching disabled")
+    worker_task = asyncio.create_task(_toxicity_worker())
     yield
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
     if _pool:
         await _pool.close()
         _pool = None
