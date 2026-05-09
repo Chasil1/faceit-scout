@@ -963,6 +963,9 @@ async function reportDismiss(reportId) {
 const REVIEWS_PER_PAGE = 100;
 let reviewsData = [];
 let reviewsPage = 0;
+let rvToxicOnly = false;
+let rvFromFaceitId = null;
+let rvToAccountId = null;
 
 async function loadReviews() {
   document.getElementById('reviews-state').style.display = '';
@@ -970,7 +973,11 @@ async function loadReviews() {
   document.getElementById('reviews-list').innerHTML = '';
   document.getElementById('reviews-pagination').innerHTML = '';
   try {
-    const r = await fetch('/api/admin/reviews');
+    const params = new URLSearchParams();
+    if (rvToxicOnly) params.set('toxic_only', 'true');
+    if (rvFromFaceitId) params.set('reviewer_faceit_id', rvFromFaceitId);
+    if (rvToAccountId !== null) params.set('target_account_id', String(rvToAccountId));
+    const r = await fetch('/api/admin/reviews?' + params.toString());
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     reviewsData = data.reviews || [];
@@ -1034,19 +1041,35 @@ function renderReviews() {
     const commentHtml = rv.comment
       ? `<div class="rv-comment">${esc(rv.comment)}</div>`
       : `<div class="rv-comment empty">(без коментаря)</div>`;
+    const toxicBadge = rv.effective_toxic
+      ? `<span class="rv-toxic-badge">🔴 ТОКСИЧНИЙ</span>`
+      : '';
+    const bannedBadge = rv.reviewer_is_banned
+      ? `<span class="rv-banned-badge">⛔ ЗАБЛОКОВАНО</span>`
+      : '';
+    const removeToxicBtn = rv.effective_toxic
+      ? `<button class="rv-remove-toxic-btn" data-reviewer="${esc(rv.reviewer_faceit_id)}" data-target="${rv.target_account_id}">Зняти мітку</button>`
+      : '';
+    const banBtn = !rv.reviewer_is_banned
+      ? `<button class="rv-ban-btn" data-reviewer="${esc(rv.reviewer_faceit_id)}" data-nickname="${esc(rv.reviewer_nickname || rv.reviewer_faceit_id)}">Забанити</button>`
+      : '';
     return `
       <div class="review-card" data-idx="${idx}">
         <div class="rv-rating">${ratingIcon}</div>
         <div class="rv-body">
           <div class="rv-players">
             <span>${reviewerText}${anonBadge}</span>
+            ${bannedBadge}
+            ${toxicBadge}
             <span style="color:var(--muted)">→</span>
             ${targetLink}
           </div>
           ${commentHtml}
           <div class="rv-time">${fmtTime(rv.updated_at)}</div>
+          ${removeToxicBtn}
         </div>
         <div class="rv-actions">
+          ${banBtn}
           <button class="rv-del-btn" data-reviewer="${esc(rv.reviewer_faceit_id)}" data-target="${rv.target_account_id}">
             Видалити
           </button>
@@ -1059,6 +1082,12 @@ function renderReviews() {
   });
   list.querySelectorAll('.rv-player-link').forEach(el => {
     el.onclick = () => openProfileModal(+el.dataset.acc);
+  });
+  list.querySelectorAll('.rv-remove-toxic-btn').forEach(btn => {
+    btn.onclick = () => removeToxicLabel(btn.dataset.reviewer, btn.dataset.target, btn);
+  });
+  list.querySelectorAll('.rv-ban-btn').forEach(btn => {
+    btn.onclick = () => openBanModal(btn.dataset.reviewer, btn.dataset.nickname);
   });
 
   renderReviewsPagination();
@@ -1074,6 +1103,184 @@ async function deleteReview(reviewerFaceitId, targetAccountId) {
     alert('Помилка: ' + e.message);
   }
 }
+
+async function removeToxicLabel(reviewerFaceitId, targetAccountId, btn) {
+  const orig = btn.textContent;
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    const r = await fetch(
+      `/api/admin/reviews/${encodeURIComponent(reviewerFaceitId)}/${targetAccountId}/toxicity`,
+      { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({override: false}) }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadReviews();
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+// ── Ban modal ───────────────────────────────────────────────────────────
+let banPendingFaceitId = null;
+
+function openBanModal(faceitId, nickname) {
+  banPendingFaceitId = faceitId;
+  document.getElementById('ban-modal-text').textContent =
+    `Забанити "${nickname}"? Гравець не зможе увійти на сайт, а всі його відгуки будуть видалені.`;
+  document.getElementById('ban-modal').style.display = 'flex';
+}
+
+function closeBanModal() {
+  banPendingFaceitId = null;
+  document.getElementById('ban-modal').style.display = 'none';
+  const btn = document.getElementById('ban-confirm-btn');
+  btn.textContent = 'Забанити';
+  btn.disabled = false;
+}
+
+async function confirmBan() {
+  if (!banPendingFaceitId) return;
+  const faceitId = banPendingFaceitId;
+  const btn = document.getElementById('ban-confirm-btn');
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/admin/users/${encodeURIComponent(faceitId)}/ban`, { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    closeBanModal();
+    await loadReviews();
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+    btn.textContent = 'Забанити';
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('ban-confirm-btn').addEventListener('click', confirmBan);
+document.getElementById('ban-cancel-btn').addEventListener('click', closeBanModal);
+document.getElementById('ban-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeBanModal();
+});
+
+// ── Reviews filters setup ──────────────────────────────────────────────
+document.getElementById('rv-toxic-only').addEventListener('change', function() {
+  rvToxicOnly = this.checked;
+  loadReviews();
+});
+
+document.getElementById('rv-reanalyze-btn').addEventListener('click', async function() {
+  this.textContent = '⏳ Аналіз…';
+  this.disabled = true;
+  try {
+    const r = await fetch('/api/admin/reviews/reanalyze', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    this.textContent = `✓ ${data.queued} в черзі`;
+    setTimeout(() => { this.textContent = '🔄 Перевірити всі'; this.disabled = false; }, 2500);
+  } catch (e) {
+    alert('Помилка: ' + e.message);
+    this.textContent = '🔄 Перевірити всі';
+    this.disabled = false;
+  }
+});
+
+// ── Autocomplete helper ────────────────────────────────────────────────
+function renderAutocomplete(dropdownId, items, onSelect) {
+  const dropdown = document.getElementById(dropdownId);
+  if (!items || !items.length) { dropdown.style.display = 'none'; return; }
+  dropdown.innerHTML = items.map((u, i) => {
+    const avatar = u.avatar
+      ? `<img src="${esc(u.avatar)}" alt="">`
+      : `<span class="ac-avatar-placeholder"></span>`;
+    return `<div class="rv-autocomplete-item" data-i="${i}">${avatar}<span>${esc(u.nickname)}</span></div>`;
+  }).join('');
+  dropdown.style.display = 'block';
+  dropdown.querySelectorAll('.rv-autocomplete-item').forEach(el => {
+    el.addEventListener('click', () => onSelect(items[+el.dataset.i]));
+  });
+}
+
+// "Відгуки від" autocomplete (reviewers — from users table)
+let rvFromDebounce = null;
+const rvFromInput = document.getElementById('rv-from-input');
+const rvFromDropdown = document.getElementById('rv-from-dropdown');
+
+rvFromInput.addEventListener('input', function() {
+  clearTimeout(rvFromDebounce);
+  const q = this.value.trim();
+  if (q.length < 2) {
+    rvFromDropdown.style.display = 'none';
+    if (!q && rvFromFaceitId) { rvFromFaceitId = null; loadReviews(); }
+    return;
+  }
+  rvFromDebounce = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&role=reviewer`);
+      const data = await r.json();
+      renderAutocomplete('rv-from-dropdown', data.users, u => {
+        rvFromInput.value = u.nickname;
+        rvFromDropdown.style.display = 'none';
+        rvFromFaceitId = u.faceit_id;
+        loadReviews();
+      });
+    } catch {}
+  }, 300);
+});
+
+rvFromInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    rvFromDropdown.style.display = 'none';
+    this.value = '';
+    rvFromFaceitId = null;
+    loadReviews();
+  }
+});
+
+// "Відгуки гравцю" autocomplete (targets — from opendota_cache)
+let rvToDebounce = null;
+const rvToInput = document.getElementById('rv-to-input');
+const rvToDropdown = document.getElementById('rv-to-dropdown');
+
+rvToInput.addEventListener('input', function() {
+  clearTimeout(rvToDebounce);
+  const q = this.value.trim();
+  if (q.length < 2) {
+    rvToDropdown.style.display = 'none';
+    if (!q && rvToAccountId !== null) { rvToAccountId = null; loadReviews(); }
+    return;
+  }
+  rvToDebounce = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&role=target`);
+      const data = await r.json();
+      renderAutocomplete('rv-to-dropdown', data.users, u => {
+        rvToInput.value = u.nickname;
+        rvToDropdown.style.display = 'none';
+        rvToAccountId = u.account_id;
+        loadReviews();
+      });
+    } catch {}
+  }, 300);
+});
+
+rvToInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    rvToDropdown.style.display = 'none';
+    this.value = '';
+    rvToAccountId = null;
+    loadReviews();
+  }
+});
+
+// Close autocomplete dropdowns on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('.rv-search-wrap')) {
+    rvFromDropdown.style.display = 'none';
+    rvToDropdown.style.display = 'none';
+  }
+});
 
 // ── Profile modal ───────────────────────────────────────────────────────
 function lvlClassP(lvl) { return `lv${Math.min(+lvl || 0, 10)}`; }
