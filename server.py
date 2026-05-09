@@ -42,12 +42,14 @@ JWT_EXPIRE_DAYS = 30
 
 _pool: asyncpg.Pool | None = None
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCV839C66pP4WY2LfFRfxKfYHTW2RZTAjI")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCS1wf_Z5jreyJSZXpOdZgl4CfRNbSgZ48")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "gemini-3-flash-preview:generateContent"
 )
 _toxicity_queue: asyncio.Queue = asyncio.Queue()
+_toxicity_processed: int = 0
+_toxicity_total: int = 0
 
 RANK_NAMES = {
     1: "Herald",
@@ -351,6 +353,10 @@ async def fetch_player(session, roster_entry):
     return result
 
 
+class _RateLimited(Exception):
+    pass
+
+
 async def check_toxicity_gemini(comment: str) -> bool:
     prompt = (
         "Проаналізуй наступний коментар у грі (Dota 2 / FACEIT) і визнач чи є він токсичним.\n"
@@ -371,8 +377,11 @@ async def check_toxicity_gemini(comment: str) -> bool:
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status == 429:
+                    raise _RateLimited()
                 if resp.status != 200:
-                    log.error("Gemini API error %s", resp.status)
+                    body = await resp.text()
+                    log.error("Gemini API error %s: %s", resp.status, body[:200])
                     return False
                 data = await resp.json()
                 candidates = data.get("candidates", [])
@@ -389,18 +398,31 @@ async def check_toxicity_gemini(comment: str) -> bool:
                     log.error("Gemini: could not parse toxic JSON from: %r", text)
                     return False
                 return json.loads(match.group(0)).get("toxic", False)
+    except _RateLimited:
+        raise
     except Exception as e:
         log.error("Gemini toxicity check failed: %s", e)
         return False
 
 
 async def _toxicity_worker():
+    global _toxicity_processed
     while True:
         item = None
         try:
             item = await _toxicity_queue.get()
             reviewer_faceit_id, target_account_id, comment = item
-            is_toxic = await check_toxicity_gemini(comment)
+
+            is_toxic = False
+            for attempt in range(4):
+                try:
+                    is_toxic = await check_toxicity_gemini(comment)
+                    break
+                except _RateLimited:
+                    wait = 15 * (attempt + 1)
+                    log.warning("Gemini rate limited, retrying in %ds (attempt %d/4)", wait, attempt + 1)
+                    await asyncio.sleep(wait)
+
             if _pool:
                 await _pool.execute(
                     """
@@ -413,10 +435,16 @@ async def _toxicity_worker():
                     is_toxic,
                 )
                 log.info("toxicity %s/%s -> %s", reviewer_faceit_id, target_account_id, is_toxic)
+
+            _toxicity_processed += 1
+            await asyncio.sleep(2.0)
+
         except asyncio.CancelledError:
             break
         except Exception as e:
             log.error("toxicity worker error: %s", e)
+            if item is not None:
+                _toxicity_processed += 1
         finally:
             if item is not None:
                 _toxicity_queue.task_done()
@@ -1784,17 +1812,38 @@ async def admin_ban_user(
 
 @app.post("/api/admin/reviews/reanalyze")
 async def admin_reanalyze_reviews(admin_session: str | None = Cookie(default=None)):
+    global _toxicity_processed, _toxicity_total
     if not _is_admin(admin_session):
         raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
+    # Clear current queue before starting fresh batch
+    while not _toxicity_queue.empty():
+        try:
+            _toxicity_queue.get_nowait()
+            _toxicity_queue.task_done()
+        except Exception:
+            break
     rows = await _pool.fetch(
         "SELECT reviewer_faceit_id, target_account_id, comment FROM player_reviews "
-        "WHERE comment IS NOT NULL AND is_toxic_override IS NULL"
+        "WHERE comment IS NOT NULL"
     )
+    _toxicity_processed = 0
+    _toxicity_total = len(rows)
     for row in rows:
         await _toxicity_queue.put((row["reviewer_faceit_id"], row["target_account_id"], row["comment"]))
     return {"ok": True, "queued": len(rows)}
+
+
+@app.get("/api/admin/reviews/queue-status")
+async def admin_queue_status(admin_session: str | None = Cookie(default=None)):
+    if not _is_admin(admin_session):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return {
+        "queued": _toxicity_queue.qsize(),
+        "processed": _toxicity_processed,
+        "total": _toxicity_total,
+    }
 
 
 @app.post("/api/admin/smurf/{account_id}")
