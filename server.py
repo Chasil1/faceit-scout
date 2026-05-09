@@ -1720,6 +1720,8 @@ async def admin_search_users(
         raise HTTPException(status_code=403, detail="forbidden")
     if not _pool or len(q) < 2:
         return {"users": []}
+    if role not in ("reviewer", "target"):
+        raise HTTPException(status_code=400, detail="role must be reviewer or target")
     if role == "reviewer":
         rows = await _pool.fetch(
             "SELECT faceit_id, nickname, avatar FROM users WHERE nickname ILIKE $1 LIMIT 20",
