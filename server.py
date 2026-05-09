@@ -1730,7 +1730,7 @@ async def admin_list_reviews(
     rows = await _pool.fetch(
         f"""
         SELECT pr.reviewer_faceit_id, pr.target_account_id, pr.rating, pr.comment, pr.updated_at,
-               pr.is_anonymous, pr.is_toxic, pr.is_toxic_override,
+               pr.is_anonymous, pr.is_toxic, pr.is_toxic_override, pr.is_toxicity_checked,
                u.nickname AS reviewer_nickname, u.avatar AS reviewer_avatar,
                COALESCE(u.is_banned, FALSE) AS reviewer_is_banned,
                oc.nickname AS target_nickname
@@ -1764,6 +1764,7 @@ async def admin_list_reviews(
             "is_anonymous": r["is_anonymous"],
             "is_toxic": r["is_toxic"],
             "is_toxic_override": r["is_toxic_override"],
+            "is_toxicity_checked": r["is_toxicity_checked"],
             "effective_toxic": effective_toxic(r),
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
         }
