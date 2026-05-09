@@ -68,6 +68,89 @@
 }
 .rv-del-btn:hover { border-color: var(--red); color: var(--red); }
 
+/* Reviews toolbar */
+.reviews-toolbar {
+  display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end;
+  margin-bottom: .75rem; padding-bottom: .75rem;
+  border-bottom: 1px solid var(--border);
+}
+.rv-toxic-check-wrap { display: flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--dim); cursor: pointer; user-select: none; padding-bottom: .1rem; }
+.rv-toxic-check-wrap input[type=checkbox] { accent-color: var(--red); width: 15px; height: 15px; cursor: pointer; }
+.rv-search-wrap { display: flex; flex-direction: column; gap: .2rem; position: relative; }
+.rv-search-label { font-size: .68rem; color: var(--dim); letter-spacing: .07em; text-transform: uppercase; font-weight: 600; }
+.rv-search-input {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+  padding: .3rem .6rem; font-family: inherit; font-size: .8rem; width: 185px; outline: none;
+}
+.rv-search-input:focus { border-color: var(--orange); }
+.rv-autocomplete {
+  position: absolute; top: 100%; left: 0; right: 0; background: var(--bg2);
+  border: 1px solid var(--border2); border-top: none; z-index: 200;
+  max-height: 200px; overflow-y: auto;
+}
+.rv-autocomplete-item { padding: .35rem .6rem; font-size: .8rem; cursor: pointer; display: flex; align-items: center; gap: .5rem; }
+.rv-autocomplete-item:hover { background: var(--bg3); }
+.rv-autocomplete-item img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.rv-autocomplete-item .ac-avatar-placeholder { width: 20px; height: 20px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); flex-shrink: 0; }
+.rv-reanalyze-btn {
+  margin-left: auto; background: var(--bg3); border: 1px solid var(--border2); color: var(--dim);
+  padding: .3rem .7rem; font-family: inherit; font-size: .75rem; font-weight: 600;
+  letter-spacing: .04em; cursor: pointer; white-space: nowrap; align-self: flex-end;
+}
+.rv-reanalyze-btn:hover:not(:disabled) { border-color: var(--orange); color: var(--orange); }
+.rv-reanalyze-btn:disabled { opacity: .5; cursor: default; }
+
+/* Toxic badge on review card */
+.rv-toxic-badge {
+  display: inline-flex; align-items: center; gap: .2rem;
+  background: rgba(255,59,59,.1); border: 1px solid rgba(255,59,59,.35);
+  color: var(--red); font-size: .65rem; font-weight: 700;
+  padding: .08rem .4rem; letter-spacing: .07em; vertical-align: middle;
+}
+.rv-banned-badge {
+  display: inline-flex; align-items: center;
+  background: rgba(255,59,59,.06); border: 1px solid rgba(255,59,59,.2);
+  color: #cc4444; font-size: .65rem; font-weight: 700;
+  padding: .08rem .4rem; letter-spacing: .06em; vertical-align: middle;
+}
+.rv-remove-toxic-btn {
+  display: inline-block; margin-top: .3rem;
+  background: none; border: 1px solid var(--border2); color: var(--dim);
+  padding: .18rem .5rem; font-family: inherit; font-size: .68rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.rv-remove-toxic-btn:hover { border-color: var(--orange); color: var(--orange); }
+.rv-ban-btn {
+  background: none; border: 1px solid transparent; color: var(--dim);
+  padding: .28rem .6rem; font-family: inherit; font-size: .72rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; display: block;
+}
+.rv-ban-btn:hover { border-color: var(--red); color: var(--red); }
+
+/* Ban confirmation modal */
+.ban-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+}
+.ban-modal-box {
+  background: var(--bg2); border: 1px solid var(--border2); padding: 1.75rem 1.5rem;
+  min-width: 300px; max-width: 400px; text-align: center;
+}
+.ban-modal-box h3 { font-size: 1.05rem; margin-bottom: .6rem; color: var(--text); }
+.ban-modal-box p { font-size: .85rem; color: var(--dim); margin-bottom: 1.4rem; line-height: 1.5; }
+.ban-modal-actions { display: flex; gap: .6rem; justify-content: center; }
+.ban-confirm-btn {
+  background: rgba(255,59,59,.14); border: 1px solid var(--red); color: var(--red);
+  padding: .45rem 1.2rem; font-family: inherit; font-size: .85rem; font-weight: 700; cursor: pointer;
+}
+.ban-confirm-btn:hover:not(:disabled) { background: rgba(255,59,59,.24); }
+.ban-confirm-btn:disabled { opacity: .5; cursor: default; }
+.ban-cancel-btn {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--dim);
+  padding: .45rem 1.2rem; font-family: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.ban-cancel-btn:hover { border-color: var(--text); color: var(--text); }
+
 .pagination {
   display: flex; align-items: center; gap: .6rem; margin-top: .9rem;
   justify-content: center;
