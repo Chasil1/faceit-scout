@@ -577,6 +577,7 @@ async def get_match(room_id: str):
                 for fk in ["faction1", "faction2"]
             }
 
+            account_ids_in_match = []
             for i, r in enumerate(players_results):
                 fk = team_keys[i]
                 teams[fk]["players"].append(
@@ -591,6 +592,17 @@ async def get_match(room_id: str):
                         "avatar": "",
                     }
                 )
+                if not isinstance(r, Exception) and r.get("account_id"):
+                    account_ids_in_match.append(r["account_id"])
+
+            if _pool and account_ids_in_match:
+                try:
+                    await _pool.executemany(
+                        "INSERT INTO match_players (room_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                        [(room_id, aid) for aid in account_ids_in_match],
+                    )
+                except Exception as e:
+                    log.warning("Failed to save match_players for %s: %s", room_id, e)
 
             return {
                 "match_id": room_id,
@@ -1596,20 +1608,20 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
         raise HTTPException(status_code=400, detail="Cannot review yourself")
 
     if viewer_dota_id is None:
-        raise HTTPException(status_code=403, detail="Dota account not linked — cannot verify match history")
+        raise HTTPException(status_code=403, detail="Dota account not linked")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            shared = await opendota_get(
-                session,
-                f"/players/{viewer_dota_id}/matches?included_account_id={account_id}&significant=0&limit=1",
-            )
-        if shared is not None and len(shared) == 0:
-            raise HTTPException(status_code=403, detail="You have never played with this player")
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning("Could not verify match history for %s vs %s: %s", viewer_dota_id, account_id, e)
+    shared = await _pool.fetchval(
+        """
+        SELECT 1 FROM match_players mp1
+        JOIN match_players mp2 USING (room_id)
+        WHERE mp1.account_id = $1 AND mp2.account_id = $2
+        LIMIT 1
+        """,
+        viewer_dota_id,
+        account_id,
+    )
+    if shared is None:
+        raise HTTPException(status_code=403, detail="You haven't played with this player in any parsed lobby")
 
     comment = (body.comment or "").strip() or None
     await _pool.execute(
