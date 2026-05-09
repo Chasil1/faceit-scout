@@ -555,6 +555,10 @@ td.nick a:hover { color: var(--orange); }
       <input type="checkbox" id="rv-toxic-only">
       🔴 Тільки токсичні
     </label>
+    <label class="rv-toxic-check-wrap">
+      <input type="checkbox" id="rv-has-comment">
+      💬 З коментарем
+    </label>
     <div class="rv-search-wrap">
       <span class="rv-search-label">Відгуки від</span>
       <input class="rv-search-input" id="rv-from-input" placeholder="Пошук гравця…" autocomplete="off">
@@ -967,6 +971,7 @@ const REVIEWS_PER_PAGE = 100;
 let reviewsData = [];
 let reviewsPage = 0;
 let rvToxicOnly = false;
+let rvHasComment = false;
 let rvFromFaceitId = null;
 let rvToAccountId = null;
 
@@ -978,6 +983,7 @@ async function loadReviews() {
   try {
     const params = new URLSearchParams();
     if (rvToxicOnly) params.set('toxic_only', 'true');
+    if (rvHasComment) params.set('has_comment', 'true');
     if (rvFromFaceitId) params.set('reviewer_faceit_id', rvFromFaceitId);
     if (rvToAccountId !== null) params.set('target_account_id', String(rvToAccountId));
     const r = await fetch('/api/admin/reviews?' + params.toString());
@@ -1177,6 +1183,10 @@ document.getElementById('ban-modal').addEventListener('click', e => {
 // ── Reviews filters setup ──────────────────────────────────────────────
 document.getElementById('rv-toxic-only').addEventListener('change', function() {
   rvToxicOnly = this.checked;
+  loadReviews();
+});
+document.getElementById('rv-has-comment').addEventListener('change', function() {
+  rvHasComment = this.checked;
   loadReviews();
 });
 

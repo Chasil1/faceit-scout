@@ -1705,6 +1705,7 @@ class SmurfUpdate(BaseModel):
 async def admin_list_reviews(
     admin_session: str | None = Cookie(default=None),
     toxic_only: bool = False,
+    has_comment: bool = False,
     reviewer_faceit_id: str | None = None,
     target_account_id: int | None = None,
 ):
@@ -1720,6 +1721,8 @@ async def admin_list_reviews(
         conditions.append(
             "((pr.is_toxic_override IS NULL AND pr.is_toxic = TRUE) OR pr.is_toxic_override = TRUE)"
         )
+    if has_comment:
+        conditions.append("pr.comment IS NOT NULL")
     if reviewer_faceit_id:
         params.append(reviewer_faceit_id)
         conditions.append(f"pr.reviewer_faceit_id = ${len(params)}")
