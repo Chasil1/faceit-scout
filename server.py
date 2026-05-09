@@ -1052,24 +1052,26 @@ def get_current_user(request: Request) -> dict | None:
     return verify_jwt_token(token)
 
 
-async def save_user_to_db(faceit_id: str, nickname: str, avatar: str | None):
+async def save_user_to_db(faceit_id: str, nickname: str, avatar: str | None, dota_account_id: int | None = None):
     """Save or update user in database."""
     if not _pool:
         return
     try:
         await _pool.execute(
             """
-            INSERT INTO users (faceit_id, nickname, avatar, last_login)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO users (faceit_id, nickname, avatar, last_login, dota_account_id)
+            VALUES ($1, $2, $3, NOW(), $4)
             ON CONFLICT (faceit_id)
             DO UPDATE SET
                 nickname = EXCLUDED.nickname,
                 avatar = EXCLUDED.avatar,
-                last_login = NOW()
+                last_login = NOW(),
+                dota_account_id = COALESCE(EXCLUDED.dota_account_id, users.dota_account_id)
             """,
             faceit_id,
             nickname,
             avatar,
+            dota_account_id,
         )
     except Exception as e:
         log.error("Failed to save user to DB: %s", e)
@@ -1083,7 +1085,24 @@ async def get_user_dota_account_id(faceit_id: str) -> int | None:
             "SELECT dota_account_id FROM users WHERE faceit_id = $1",
             faceit_id,
         )
-        return row["dota_account_id"] if row else None
+        if row and row["dota_account_id"]:
+            return row["dota_account_id"]
+
+        # Fallback: check opendota_cache by faceit_player_id
+        cache_row = await _pool.fetchrow(
+            "SELECT account_id FROM opendota_cache WHERE faceit_player_id = $1 LIMIT 1",
+            faceit_id,
+        )
+        if cache_row:
+            account_id = cache_row["account_id"]
+            await _pool.execute(
+                "UPDATE users SET dota_account_id = $1 WHERE faceit_id = $2 AND dota_account_id IS NULL",
+                account_id,
+                faceit_id,
+            )
+            return account_id
+
+        return None
     except Exception as e:
         log.error("Failed to fetch user dota_account_id: %s", e)
         return None
@@ -1218,10 +1237,12 @@ async def auth_callback(
                 log.error("Userinfo missing id field: keys=%s", list(raw.keys()))
                 return RedirectResponse("/?auth_error=8")
 
+            dota_id = await fetch_faceit_dota_account_id(session, user_data["player_id"])
             await save_user_to_db(
                 user_data["player_id"],
                 user_data["nickname"],
                 user_data.get("avatar"),
+                dota_id,
             )
 
             if _pool:
@@ -1341,10 +1362,12 @@ async def exchange_code(
                 log.error("Userinfo missing id field: keys=%s", list(raw.keys()))
                 raise HTTPException(status_code=400, detail="Invalid userinfo")
 
+            dota_id = await fetch_faceit_dota_account_id(session, user_data["player_id"])
             await save_user_to_db(
                 user_data["player_id"],
                 user_data["nickname"],
                 user_data.get("avatar"),
+                dota_id,
             )
 
             if _pool:
