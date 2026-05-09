@@ -547,6 +547,23 @@ td.nick a:hover { color: var(--orange); }
 
 <!-- Reviews tab -->
 <div class="tab-panel" id="tab-reviews">
+  <div class="reviews-toolbar">
+    <label class="rv-toxic-check-wrap">
+      <input type="checkbox" id="rv-toxic-only">
+      🔴 Тільки токсичні
+    </label>
+    <div class="rv-search-wrap">
+      <span class="rv-search-label">Відгуки від</span>
+      <input class="rv-search-input" id="rv-from-input" placeholder="Пошук гравця…" autocomplete="off">
+      <div class="rv-autocomplete" id="rv-from-dropdown" style="display:none"></div>
+    </div>
+    <div class="rv-search-wrap">
+      <span class="rv-search-label">Відгуки гравцю</span>
+      <input class="rv-search-input" id="rv-to-input" placeholder="Пошук гравця…" autocomplete="off">
+      <div class="rv-autocomplete" id="rv-to-dropdown" style="display:none"></div>
+    </div>
+    <button class="rv-reanalyze-btn" id="rv-reanalyze-btn">🔄 Перевірити всі</button>
+  </div>
   <div id="reviews-state" class="state">Завантаження…</div>
   <div class="reviews-list" id="reviews-list"></div>
   <div class="pagination" id="reviews-pagination"></div>
@@ -582,6 +599,18 @@ td.nick a:hover { color: var(--orange); }
     <div class="modal-actions">
       <button class="btn" id="cancel-btn">Скасувати</button>
       <button class="btn primary" id="save-btn">Зберегти</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ban confirmation modal -->
+<div class="ban-modal-overlay" id="ban-modal" style="display:none">
+  <div class="ban-modal-box">
+    <h3>Забанити гравця</h3>
+    <p id="ban-modal-text"></p>
+    <div class="ban-modal-actions">
+      <button class="ban-cancel-btn" id="ban-cancel-btn">Скасувати</button>
+      <button class="ban-confirm-btn" id="ban-confirm-btn">Забанити</button>
     </div>
   </div>
 </div>
