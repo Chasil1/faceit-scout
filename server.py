@@ -1595,6 +1595,22 @@ async def post_review(account_id: int, body: ReviewCreate, request: Request):
     if viewer_dota_id == account_id:
         raise HTTPException(status_code=400, detail="Cannot review yourself")
 
+    if viewer_dota_id is None:
+        raise HTTPException(status_code=403, detail="Dota account not linked — cannot verify match history")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            shared = await opendota_get(
+                session,
+                f"/players/{viewer_dota_id}/matches?included_account_id={account_id}&significant=0&limit=1",
+            )
+        if shared is not None and len(shared) == 0:
+            raise HTTPException(status_code=403, detail="You have never played with this player")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("Could not verify match history for %s vs %s: %s", viewer_dota_id, account_id, e)
+
     comment = (body.comment or "").strip() or None
     await _pool.execute(
         """
