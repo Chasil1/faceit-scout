@@ -1616,33 +1616,71 @@ class SmurfUpdate(BaseModel):
 
 
 @app.get("/api/admin/reviews")
-async def admin_list_reviews(admin_session: str | None = Cookie(default=None)):
+async def admin_list_reviews(
+    admin_session: str | None = Cookie(default=None),
+    toxic_only: bool = False,
+    reviewer_faceit_id: str | None = None,
+    target_account_id: int | None = None,
+):
     if not _is_admin(admin_session):
         raise HTTPException(status_code=403, detail="forbidden")
     if not _pool:
         raise HTTPException(status_code=503, detail="db unavailable")
+
+    conditions: list[str] = []
+    params: list = []
+
+    if toxic_only:
+        conditions.append(
+            "(pr.is_toxic_override IS NULL AND pr.is_toxic = TRUE) OR pr.is_toxic_override = TRUE"
+        )
+    if reviewer_faceit_id:
+        params.append(reviewer_faceit_id)
+        conditions.append(f"pr.reviewer_faceit_id = ${len(params)}")
+    if target_account_id is not None:
+        params.append(target_account_id)
+        conditions.append(f"pr.target_account_id = ${len(params)}")
+
+    where = ("WHERE " + " AND ".join(f"({c})" for c in conditions)) if conditions else ""
+
     rows = await _pool.fetch(
-        """
+        f"""
         SELECT pr.reviewer_faceit_id, pr.target_account_id, pr.rating, pr.comment, pr.updated_at,
-               pr.is_anonymous,
+               pr.is_anonymous, pr.is_toxic, pr.is_toxic_override,
                u.nickname AS reviewer_nickname, u.avatar AS reviewer_avatar,
+               COALESCE(u.is_banned, FALSE) AS reviewer_is_banned,
                oc.nickname AS target_nickname
         FROM player_reviews pr
         LEFT JOIN users u ON u.faceit_id = pr.reviewer_faceit_id
         LEFT JOIN opendota_cache oc ON oc.account_id = pr.target_account_id
-        ORDER BY pr.updated_at DESC
-        """
+        {where}
+        ORDER BY
+          CASE WHEN (pr.is_toxic_override IS NULL AND pr.is_toxic = TRUE)
+                 OR pr.is_toxic_override = TRUE THEN 0 ELSE 1 END,
+          pr.updated_at DESC
+        """,
+        *params,
     )
+
+    def effective_toxic(r) -> bool:
+        if r["is_toxic_override"] is not None:
+            return bool(r["is_toxic_override"])
+        return bool(r["is_toxic"])
+
     return {"reviews": [
         {
             "reviewer_faceit_id": r["reviewer_faceit_id"],
             "reviewer_nickname": r["reviewer_nickname"] or r["reviewer_faceit_id"][:8],
             "reviewer_avatar": r["reviewer_avatar"],
+            "reviewer_is_banned": r["reviewer_is_banned"],
             "target_account_id": r["target_account_id"],
             "target_nickname": r["target_nickname"],
             "rating": r["rating"],
             "comment": r["comment"],
             "is_anonymous": r["is_anonymous"],
+            "is_toxic": r["is_toxic"],
+            "is_toxic_override": r["is_toxic_override"],
+            "effective_toxic": effective_toxic(r),
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
         }
         for r in rows
