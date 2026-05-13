@@ -1715,7 +1715,7 @@ async def admin_list_players(admin_session: str | None = Cookie(default=None)):
                cached_at, updated_manually_at
         FROM opendota_cache
         ORDER BY COALESCE(updated_manually_at, cached_at) DESC
-        LIMIT 1000
+        LIMIT 5000
         """
     )
     out = []
